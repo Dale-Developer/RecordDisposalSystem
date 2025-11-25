@@ -1,170 +1,142 @@
+<?php
+session_start();
+require_once '../db_connect.php';
+require_once '../count_functions.php'; // Include the counts file
+
+// Redirect to login if not authenticated
+if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+  header("Location: ../static/index.php");
+  exit();
+}
+
+// Get all data using the functions
+$counts = getRecordCounts($conn);
+$due_records = getRecordsDueForArchive($conn);
+$recent_requests = getRecentArchiveRequests($conn);
+
+// If user is a custodian, get office-specific counts
+if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
+  $office_counts = getOfficeRecordCounts($conn, $_SESSION['office_id']);
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>File Management Dashboard</title>
-    <link rel="stylesheet" href="../styles/dashboard.css" />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    />
-  </head>
-  <body>
-    <main>
-      <div class="dashboard-container">
-        <div class="summary-cards">
-          <div class="card summary-card active-files">
-            <div class="status-line teal"></div>
-            <div class="card-content">
-              <div class="data-text">
-                <h2 class="label">ACTIVE FILES</h2>
-                <p class="value">5.6K</p>
-              </div>
-              <i class="fas fa-running icon"></i>
-            </div>
-          </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="../styles/dashboard.css" />
+  <link rel="stylesheet" href="../styles/sidebar.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="icon" type="image/x-icon" href="../imgs/fav.png">
+</head>
 
-          <div class="card summary-card archivable-files">
-            <div class="status-line brown"></div>
-            <div class="card-content">
-              <div class="data-text">
-                <p class="label">ARCHIVABLE FILES</p>
-                <p class="value">0</p>
-              </div>
-              <i class="fas fa-box-archive icon"></i>
+<body>
+  <nav class="sidebar">
+    <?php include 'sidebar.php'; ?>
+  </nav>
+  <main>
+    <div class="dashboard-container">
+      <div class="summary-cards">
+        <!-- Active Files Card -->
+        <div class="card summary-card active-files">
+          <div class="status-line teal"></div>
+          <div class="card-content">
+            <div class="data-text">
+              <h2 class="label">ACTIVE FILES</h2>
+              <p class="value"><?php echo number_format($counts['active_files']); ?></p>
             </div>
-          </div>
-
-          <div class="card summary-card for-disposal">
-            <div class="status-line indigo"></div>
-            <div class="card-content">
-              <div class="data-text">
-                <p class="label">FOR DISPOSAL</p>
-                <p class="value">0</p>
-              </div>
-              <i class="fas fa-file-export icon"></i>
-            </div>
-          </div>
-
-          <div class="card summary-card pending-request">
-            <div class="status-line yellow"></div>
-            <div class="card-content">
-              <div class="data-text">
-                <p class="label">PENDING REQUEST</p>
-                <p class="value">0</p>
-              </div>
-              <i class="far fa-clock icon"></i>
-            </div>
+            <i class="fas fa-running icon"></i>
           </div>
         </div>
 
-        <div class="main-sections">
-          <div class="card recent-files">
-            <h2 class="section-title">RECORDS DUE FOR ARCHIVE</h2>
-            <div class="table-container">
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Non-Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                  <tr>
-                    <td>Teaching Staff Records - HR</td>
-                    <td>01/01/25</td>
-                    <td>for archiving</td>
-                  </tr>
-                </tbody>
-              </table>
+        <!-- Archived Files Card -->
+        <div class="card summary-card archivable-files">
+          <div class="status-line brown"></div>
+          <div class="card-content">
+            <div class="data-text">
+              <p class="label">ARCHIVED</p>
+              <p class="value"><?php echo number_format($counts['archived']); ?></p>
             </div>
+            <i class="fas fa-box-archive icon"></i>
           </div>
+        </div>
 
-          <div class="card recent-tasks">
-            <h2 class="section-title">RECENT ARCHIVE REQUEST</h2>
-            <div class="task-list">
-              <div class="task-item">
-                <p class="task-code">AR-001</p>
-                <p class="task-details">010/4/2025 - Elena Cruz</p>
-              </div>
-              <div class="task-item">
-                <p class="task-code">AR-002</p>
-                <p class="task-details">09/15/2025 - Evelyn Sus</p>
-              </div>
-              <div class="task-item">
-                <p class="task-code">DR-003</p>
-                <p class="task-details">08/6/2025 - Eca Chu</p>
-              </div>
-              <div class="task-item">
-                <p class="task-code">DR-004</p>
-                <p class="task-details">08/25/2025 - EYa Boo</p>
-              </div>
-              <div class="task-item">
-                <p class="task-code">DR-004</p>
-                <p class="task-details">08/25/2025 - EYa Boo</p>
-              </div>
-              <div class="task-item">
-                <p class="task-code">DR-004</p>
-                <p class="task-details">08/25/2025 - EYa Boo</p>
-              </div>
-              <div class="task-item">
-                <p class="task-code">DR-004</p>
-                <p class="task-details">08/25/2025 - EYa Boo</p>
-              </div>
+        <!-- For Disposal Card -->
+        <div class="card summary-card for-disposal">
+          <div class="status-line indigo"></div>
+          <div class="card-content">
+            <div class="data-text">
+              <p class="label">FOR DISPOSAL</p>
+              <p class="value"><?php echo number_format($counts['for_disposal']); ?></p>
             </div>
+            <i class="fas fa-file-export icon"></i>
+          </div>
+        </div>
+
+        <!-- Pending Request Card -->
+        <div class="card summary-card pending-request">
+          <div class="status-line yellow"></div>
+          <div class="card-content">
+            <div class="data-text">
+              <p class="label">PENDING REQUEST</p>
+              <p class="value"><?php echo number_format($counts['pending_request']); ?></p>
+            </div>
+            <i class="far fa-clock icon"></i>
           </div>
         </div>
       </div>
-    </main>
-  </body>
+
+      <div class="main-sections">
+        <!-- Records Due for Archive Section -->
+        <div class="card recent-files">
+          <h2 class="section-title">RECORDS DUE FOR ARCHIVE</h2>
+          <div class="table-container">
+            <table>
+              <tbody>
+                <?php if (empty($due_records)): ?>
+                  <tr>
+                    <td colspan="3" style="text-align: center; color: #666;">No records due for archiving in the next 30
+                      days</td>
+                  </tr>
+                <?php else: ?>
+                  <?php foreach ($due_records as $record): ?>
+                    <tr>
+                      <td><?php echo htmlspecialchars($record['record_title'] . ' - ' . $record['office_name']); ?></td>
+                      <td><?php echo date('m/d/Y', strtotime($record['due_date'])); ?></td>
+                      <td style="color: var(--teal); font-weight: 600;"><?php echo htmlspecialchars($record['action']); ?>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent Archive Request Section -->
+        <div class="card recent-tasks">
+          <h2 class="section-title">Recent Archive Request</h2>
+          <div class="task-list">
+            <?php if (empty($recent_requests)): ?>
+              <div class="task-item">
+                <p class="task-details" style="text-align: center; color: #666;">No recent archive requests</p>
+              </div>
+            <?php else: ?>
+              <?php foreach ($recent_requests as $request): ?>
+                <div class="task-item">
+                  <p class="task-code"><?php echo htmlspecialchars($request['code']); ?></p>
+                  <p class="task-details"><?php echo htmlspecialchars($request['details']); ?></p>
+                </div>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="../scripts/sidebar.js"></script>
+</body>
+
 </html>
