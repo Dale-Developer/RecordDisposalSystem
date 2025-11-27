@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['signUp'])) {
     $password = $_POST['password'];
     $confirm_password = $_POST['confirm_password'];
     $role_id = $_POST['role_id'];
-    
+
     // Set office_id - only for custodians, otherwise NULL
     $office_id = ($role_id == 4 && !empty($_POST['office_id'])) ? $_POST['office_id'] : NULL;
 
@@ -33,31 +33,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['signUp'])) {
     }
 
     // Check if email already exists
-    $check_email = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
-    $check_email->bind_param("s", $email);
-    $check_email->execute();
-    $check_email->store_result();
+    $check_stmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ?");
+    $check_stmt->execute([$email]);
+    $result = $check_stmt->rowCount();
 
-    if ($check_email->num_rows > 0) {
+    if ($result > 0) {
         $errors[] = "Email already exists.";
     }
-    $check_email->close();
 
     if (empty($errors)) {
         // Hash password
         $password_hash = password_hash($password, PASSWORD_DEFAULT);
 
         try {
-            // Handle NULL office_id properly
+            // Use PDO for insertion
             if ($office_id === NULL) {
-                $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, email, password_hash, role_id, office_id) VALUES (?, ?, ?, ?, ?, NULL)");
-                $stmt->bind_param("ssssi", $first_name, $last_name, $email, $password_hash, $role_id);
+                $stmt = $pdo->prepare("INSERT INTO users (first_name, last_name, email, password_hash, role_id, office_id) VALUES (?, ?, ?, ?, ?, NULL)");
+                $stmt->execute([$first_name, $last_name, $email, $password_hash, $role_id]);
             } else {
-                $stmt = $conn->prepare("INSERT INTO users (first_name, last_name, email, password_hash, role_id, office_id) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmt->bind_param("ssssii", $first_name, $last_name, $email, $password_hash, $role_id, $office_id);
+                $stmt = $pdo->prepare("INSERT INTO users (first_name, last_name, email, password_hash, role_id, office_id) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$first_name, $last_name, $email, $password_hash, $role_id, $office_id]);
             }
-            
-            if ($stmt->execute()) {
+
+            if ($stmt->rowCount() > 0) {
                 $_SESSION['success'] = "Account created successfully! Please login.";
                 header("Location: ../Record_Disposal_System/static/index.php");
                 exit();

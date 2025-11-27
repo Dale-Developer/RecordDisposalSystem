@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'db_connect.php';
+require_once 'db_connect.php'; // This creates $pdo, not $conn
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
@@ -14,14 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         try {
-            // Prepare statement to get user data
-            $stmt = $conn->prepare("SELECT user_id, first_name, last_name, password_hash, role_id, office_id FROM users WHERE email = ?");
-            $stmt->bind_param("s", $email);
-            $stmt->execute();
-            $result = $stmt->get_result();
+            // Prepare statement to get user data using PDO
+            $stmt = $pdo->prepare("SELECT user_id, first_name, last_name, password_hash, role_id, office_id FROM users WHERE email = ?");
+            $stmt->execute([$email]);
             
-            if ($result->num_rows === 1) {
-                $user = $result->fetch_assoc();
+            if ($stmt->rowCount() === 1) {
+                $user = $stmt->fetch();
                 
                 // Verify password
                 if (password_verify($password, $user['password_hash'])) {
@@ -44,7 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "Invalid email or password.";
             }
             
-            $stmt->close();
         } catch (Exception $e) {
             $errors[] = "Login error: " . $e->getMessage();
         }

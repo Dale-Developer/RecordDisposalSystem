@@ -10,13 +10,13 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 }
 
 // Get all data using the functions
-$counts = getRecordCounts($conn);
-$due_records = getRecordsDueForArchive($conn);
-$recent_requests = getRecentArchiveRequests($conn);
+$counts = getRecordCounts($pdo);
+$due_records = getRecordsDueForArchive($pdo);
+$recent_requests = getRecentArchiveRequests($pdo);
 
 // If user is a custodian, get office-specific counts
 if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
-  $office_counts = getOfficeRecordCounts($conn, $_SESSION['office_id']);
+  $office_counts = getOfficeRecordCounts($pdo, $_SESSION['office_id']);
 }
 ?>
 
