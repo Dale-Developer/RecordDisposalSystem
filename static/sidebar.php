@@ -30,7 +30,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
       <i class="bx bx-search"></i>
       <input type="text" placeholder="Search.." />
     </div>
-    <div class="icon-nav">
+    <!-- <div class="icon-nav">
       <ul>
         <li>
           <a class="nav-icon" href="#">
@@ -48,12 +48,19 @@ $current_page = basename($_SERVER['PHP_SELF']);
           </a>
         </li>
       </ul>
-    </div>
+    </div> -->
     <div class="profile-nav">
       <a class="profile-icon" href="#">
         <i class="bx bx-user-circle"></i>
         <span><?php echo htmlspecialchars($first_name); ?></span>
       </a>
+      <div class="icon-nav">
+        <li>
+          <a class="nav-icon" href="../static/settings.php">
+            <i class="bx bx-cog"></i>
+          </a>
+        </li>
+      </div>
     </div>
   </div>
 
@@ -77,12 +84,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <i class="bx bx-mail-send"></i>
             <span>Request</span>
           </a>
-        </li>
-        <li>
-          <a href="../static/archived.php" class="<?php echo ($current_page == 'archived.php') ? 'active' : ''; ?>" data-page="archived">
-            <i class="bx bxs-package"></i>
-            <span>Archived</span>
-          </a>
+          <li>
+            <a href="../static/archived.php" class="<?php echo ($current_page == 'archived.php') ? 'active' : ''; ?>" data-page="archived">
+              <i class="bx bxs-package"></i>
+              <span>Archived</span>
+            </a>
+          </li>
         </li>
         <li>
           <a href="../static/disposal.php" class="<?php echo ($current_page == 'disposal.php') ? 'active' : ''; ?>" data-page="disposal">

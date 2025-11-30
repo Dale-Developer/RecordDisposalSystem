@@ -9,6 +9,7 @@ session_start();
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="../styles/index.css" />
   <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet" />
+  <link rel="icon" type="image/x-icon" href="../imgs/fav.png">
   <title>LOGIN</title>
   <style>
     /* Logo Styling */

@@ -1,366 +1,297 @@
 <?php
-// Enable full error reporting for debugging
+// process_record.php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+ini_set('log_errors', 1);
 
-// Set content type to JSON
+require_once 'session.php';
+require_once 'db_connect.php';
+
 header('Content-Type: application/json');
 
-// Start output buffering
-ob_start();
-
-// Manual path resolution - try multiple possible paths
-$possiblePaths = [
-    dirname(__DIR__) . '/session.php',
-    __DIR__ . '/../session.php',
-    'C:/xampp/htdocs/Record_Disposal_System/session.php'
-];
-
-$sessionLoaded = false;
-foreach ($possiblePaths as $path) {
-    if (file_exists($path)) {
-        require_once $path;
-        $sessionLoaded = true;
-        error_log("Successfully loaded session.php from: " . $path);
-        break;
-    }
-}
-
-if (!$sessionLoaded) {
-    ob_clean();
-    echo json_encode([
-        'success' => false,
-        'message' => 'Error: Could not find session.php file'
-    ]);
-    exit;
-}
-
-// Do the same for db_connect.php
-$dbLoaded = false;
-$dbPaths = [
-    dirname(__DIR__) . '/db_connect.php',
-    __DIR__ . '/../db_connect.php',
-    'C:/xampp/htdocs/Record_Disposal_System/db_connect.php'
-];
-
-foreach ($dbPaths as $path) {
-    if (file_exists($path)) {
-        require_once $path;
-        $dbLoaded = true;
-        error_log("Successfully loaded db_connect.php from: " . $path);
-        break;
-    }
-}
-
-if (!$dbLoaded) {
-    ob_clean();
-    echo json_encode([
-        'success' => false,
-        'message' => 'Error: Could not find db_connect.php file'
-    ]);
-    exit;
-}
-
 try {
-    if (!isset($pdo)) {
-        throw new Exception('Database connection not established');
-    }
-
-    $pdo->query("SELECT 1")->execute();
-
-    if (!isset($_SESSION['user_id'])) {
-        throw new Exception('Unauthorized access - User not logged in');
-    }
-
-    $action = $_GET['action'] ?? 'add';
-    error_log("Action: " . $action);
+    error_log("=== process_record.php START ===");
     
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception('Invalid request method. Expected POST, got ' . $_SERVER['REQUEST_METHOD']);
+    // Check if user is logged in
+    if (!isset($_SESSION['user_id'])) {
+        throw new Exception('Unauthorized - Please log in');
     }
 
-    // Log received data for debugging
-    error_log("POST data: " . print_r($_POST, true));
-    error_log("FILES data: " . print_r($_FILES, true));
+    $user_id = $_SESSION['user_id'];
+    $action = $_GET['action'] ?? '';
 
-    // Get form data
-    $record_id = $_POST['record_id'] ?? null;
-    $record_title = trim($_POST['record_title'] ?? '');
-    $office_id = $_POST['office_id'] ?? '';
-    $record_series_code = trim($_POST['record_series_code'] ?? '');
-    $class_id = $_POST['class_id'] ?? '';
-    $inclusive_date_from = $_POST['inclusive_date_from'] ?? null;
-    $inclusive_date_to = $_POST['inclusive_date_to'] ?? null;
-    $retention_period = trim($_POST['retention_period'] ?? '');
-    $disposition_type = $_POST['disposition_type'] ?? 'Archive';
-    $description = trim($_POST['description'] ?? '');
-    $status = $_POST['status'] ?? 'Active';
-    $created_by = $_SESSION['user_id'];
-
-    // Validate required fields
-    if (empty($record_title)) {
-        throw new Exception('Record title is required');
-    }
-    if (empty($office_id)) {
-        throw new Exception('Office/Department is required');
-    }
-    if (empty($record_series_code)) {
-        throw new Exception('Record series code is required');
-    }
-    if (empty($class_id)) {
-        throw new Exception('Classification is required');
-    }
-    if (empty($retention_period)) {
-        throw new Exception('Retention period is required');
-    }
-
-    if ($inclusive_date_from && $inclusive_date_to) {
-        if (strtotime($inclusive_date_from) > strtotime($inclusive_date_to)) {
-            throw new Exception('End date cannot be before start date');
-        }
-    }
+    error_log("Action: $action, User ID: $user_id");
 
     if ($action === 'add') {
-        // Check if record series code already exists
-        $check_sql = "SELECT record_id FROM records WHERE record_series_code = ?";
-        $check_stmt = $pdo->prepare($check_sql);
-        $check_stmt->execute([$record_series_code]);
-
-        if ($check_stmt->fetch()) {
-            throw new Exception('Record series code already exists. Please use a unique code.');
-        }
-
-        // Insert into records table
-        $sql = "INSERT INTO records (
-                record_title, 
-                office_id, 
-                record_series_code, 
-                class_id, 
-                inclusive_date_from, 
-                inclusive_date_to, 
-                retention_period, 
-                disposition_type, 
-                description, 
-                created_by,
-                date_created,
-                status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)";
-
-        $stmt = $pdo->prepare($sql);
-        $success = $stmt->execute([
-            $record_title,
-            $office_id,
-            $record_series_code,
-            $class_id,
-            $inclusive_date_from ?: null,
-            $inclusive_date_to ?: null,
-            $retention_period,
-            $disposition_type,
-            $description,
-            $created_by,
-            $status
-        ]);
-
-        if (!$success) {
-            throw new Exception('Failed to insert record into database');
-        }
-
-        $new_record_id = $pdo->lastInsertId();
-        error_log("New record created with ID: " . $new_record_id);
-
-        // Handle file uploads
-        $uploaded_files = [];
-        if (!empty($_FILES['attachments']['name'][0])) {
-            $uploaded_files = handleFileUploads($_FILES['attachments'], $new_record_id);
-        }
-
-        ob_clean();
-        echo json_encode([
-            'success' => true,
-            'message' => 'Record added successfully',
-            'record_id' => $new_record_id,
-            'uploaded_files' => $uploaded_files
-        ]);
-
-    } elseif ($action === 'edit' && $record_id) {
-        // Check if record exists
-        $check_sql = "SELECT record_id FROM records WHERE record_id = ?";
-        $check_stmt = $pdo->prepare($check_sql);
-        $check_stmt->execute([$record_id]);
-
-        if (!$check_stmt->fetch()) {
-            throw new Exception('Record not found');
-        }
-
-        // Check if record series code already exists (excluding current record)
-        $check_sql = "SELECT record_id FROM records WHERE record_series_code = ? AND record_id != ?";
-        $check_stmt = $pdo->prepare($check_sql);
-        $check_stmt->execute([$record_series_code, $record_id]);
-
-        if ($check_stmt->fetch()) {
-            throw new Exception('Record series code already exists. Please use a unique code.');
-        }
-
-        // Update existing record
-        $sql = "UPDATE records SET 
-                record_title = ?,
-                office_id = ?,
-                record_series_code = ?,
-                class_id = ?,
-                inclusive_date_from = ?,
-                inclusive_date_to = ?,
-                retention_period = ?,
-                disposition_type = ?,
-                description = ?,
-                status = ?
-            WHERE record_id = ?";
-
-        $stmt = $pdo->prepare($sql);
-        $success = $stmt->execute([
-            $record_title,
-            $office_id,
-            $record_series_code,
-            $class_id,
-            $inclusive_date_from ?: null,
-            $inclusive_date_to ?: null,
-            $retention_period,
-            $disposition_type,
-            $description,
-            $status,
-            $record_id
-        ]);
-
-        if (!$success) {
-            throw new Exception('Failed to update record in database');
-        }
-
-        // Handle file uploads for edits
-        $uploaded_files = [];
-        if (!empty($_FILES['attachments']['name'][0])) {
-            $uploaded_files = handleFileUploads($_FILES['attachments'], $record_id);
-        }
-
-        ob_clean();
-        echo json_encode([
-            'success' => true,
-            'message' => 'Record updated successfully',
-            'uploaded_files' => $uploaded_files
-        ]);
+        handleAddRecord($pdo, $user_id);
+    } elseif ($action === 'edit') {
+        handleEditRecord($pdo, $user_id);
     } else {
-        throw new Exception('Invalid action or record ID');
+        throw new Exception('Invalid action');
     }
 
 } catch (Exception $e) {
-    ob_clean();
-    error_log("Process Record Error: " . $e->getMessage());
+    error_log("=== process_record.php ERROR ===");
+    error_log("ERROR: " . $e->getMessage());
+    
+    http_response_code(500);
     echo json_encode([
         'success' => false,
         'message' => 'Error: ' . $e->getMessage()
     ]);
 }
 
-ob_end_flush();
-
-/**
- * Handle file uploads and insert into record_files table
- */
-function handleFileUploads($files, $record_id)
-{
-    global $pdo;
-
-    // Use absolute path for uploads directory
-    $upload_dir = dirname(__DIR__) . '/uploads/records/';
-
-    // Create upload directory if it doesn't exist
-    if (!is_dir($upload_dir)) {
-        if (!mkdir($upload_dir, 0755, true)) {
-            throw new Exception("Could not create upload directory: " . $upload_dir);
+function handleAddRecord($pdo, $user_id) {
+    error_log("Handling ADD record");
+    
+    // Validate required fields
+    $required = ['record_title', 'office_id', 'record_series_code', 'class_id', 'retention_period', 'disposition_type'];
+    foreach ($required as $field) {
+        if (empty($_POST[$field])) {
+            throw new Exception("Required field missing: $field");
         }
     }
 
-    // Check if directory is writable
-    if (!is_writable($upload_dir)) {
-        throw new Exception("Upload directory is not writable: " . $upload_dir);
+    // Insert record
+    $sql = "INSERT INTO records (
+        record_title, office_id, record_series_code, description, 
+        class_id, date_created, inclusive_date_from, inclusive_date_to,
+        retention_period, disposition_type, status, created_by
+    ) VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?)";
+
+    $stmt = $pdo->prepare($sql);
+    
+    $status = $_POST['status'] ?? 'Active';
+    
+    $result = $stmt->execute([
+        $_POST['record_title'],
+        $_POST['office_id'],
+        $_POST['record_series_code'],
+        $_POST['description'] ?? '',
+        $_POST['class_id'],
+        $_POST['inclusive_date_from'] ?? null,
+        $_POST['inclusive_date_to'] ?? null,
+        $_POST['retention_period'],
+        $_POST['disposition_type'],
+        $status,
+        $user_id
+    ]);
+
+    if (!$result) {
+        throw new Exception('Failed to create record');
     }
 
-    $uploaded_files = [];
+    $record_id = $pdo->lastInsertId();
+    error_log("New record created with ID: $record_id");
 
-    // Debug: Log file information
-    error_log("Processing file uploads for record ID: " . $record_id);
-    error_log("Number of files: " . count($files['name']));
+    // Handle file uploads
+    handleFileUploads($pdo, $record_id, $user_id);
 
-    // Handle multiple files
-    $file_count = count($files['name']);
+    echo json_encode([
+        'success' => true,
+        'message' => 'Record created successfully',
+        'record_id' => $record_id
+    ]);
+}
 
-    for ($i = 0; $i < $file_count; $i++) {
-        error_log("Processing file {$i}: " . $files['name'][$i] . " (Error: " . $files['error'][$i] . ")");
+function handleEditRecord($pdo, $user_id) {
+    error_log("Handling EDIT record");
+    
+    if (empty($_POST['record_id'])) {
+        throw new Exception('Record ID is required for editing');
+    }
+
+    $record_id = intval($_POST['record_id']);
+
+    // Validate required fields
+    $required = ['record_title', 'office_id', 'record_series_code', 'class_id', 'retention_period', 'disposition_type'];
+    foreach ($required as $field) {
+        if (empty($_POST[$field])) {
+            throw new Exception("Required field missing: $field");
+        }
+    }
+
+    // Update record
+    $sql = "UPDATE records SET 
+        record_title = ?, office_id = ?, record_series_code = ?, description = ?,
+        class_id = ?, inclusive_date_from = ?, inclusive_date_to = ?,
+        retention_period = ?, disposition_type = ?, status = ?
+    WHERE record_id = ?";
+
+    $stmt = $pdo->prepare($sql);
+    
+    $status = $_POST['status'] ?? 'Active';
+    
+    $result = $stmt->execute([
+        $_POST['record_title'],
+        $_POST['office_id'],
+        $_POST['record_series_code'],
+        $_POST['description'] ?? '',
+        $_POST['class_id'],
+        $_POST['inclusive_date_from'] ?? null,
+        $_POST['inclusive_date_to'] ?? null,
+        $_POST['retention_period'],
+        $_POST['disposition_type'],
+        $status,
+        $record_id
+    ]);
+
+    if (!$result) {
+        throw new Exception('Failed to update record');
+    }
+
+    error_log("Record updated: $record_id");
+
+    // Handle file deletions FIRST
+    handleFileDeletions($pdo, $record_id, $user_id);
+
+    // Handle new file uploads
+    handleFileUploads($pdo, $record_id, $user_id);
+
+    // Handle existing file tag updates
+    handleFileTagUpdates($pdo);
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Record updated successfully',
+        'record_id' => $record_id
+    ]);
+}
+
+function handleFileDeletions($pdo, $record_id, $user_id) {
+    error_log("Handling file deletions");
+    
+    if (!empty($_POST['removed_files']) && is_array($_POST['removed_files'])) {
+        $removed_files = $_POST['removed_files'];
+        error_log("Files to remove: " . implode(', ', $removed_files));
         
-        if ($files['error'][$i] === UPLOAD_ERR_OK) {
-            $file_name = basename($files['name'][$i]);
-            $file_tmp = $files['tmp_name'][$i];
-            $file_size = $files['size'][$i];
-            $file_type = $files['type'][$i];
-
-            // Generate unique filename to prevent conflicts
-            $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
-            $unique_name = uniqid() . '_' . time() . '.' . $file_extension;
-            $upload_path = $upload_dir . $unique_name;
-
-            // Validate file size (max 10MB)
-            if ($file_size > 10 * 1024 * 1024) {
-                throw new Exception("File {$file_name} is too large. Maximum size is 10MB.");
-            }
-
-            // Validate file type
-            $allowed_types = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'gif'];
-            $file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-            if (!in_array($file_extension, $allowed_types)) {
-                throw new Exception("File type not allowed for {$file_name}. Allowed types: " . implode(', ', $allowed_types));
-            }
-
-            // Move uploaded file
-            if (move_uploaded_file($file_tmp, $upload_path)) {
-                // Get file tag if provided
-                $file_tag = $_POST['file_tags'][$i] ?? '';
-
-                // Insert into record_files table
-                $sql = "INSERT INTO record_files (
-                        record_id, 
-                        file_name, 
-                        file_path, 
-                        file_type, 
-                        file_size, 
-                        file_tag,
-                        uploaded_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)";
-
-                $stmt = $pdo->prepare($sql);
-                $result = $stmt->execute([
-                    $record_id,
-                    $file_name,
-                    $unique_name,
-                    $file_type,
-                    $file_size,
-                    $file_tag,
-                    $_SESSION['user_id']
-                ]);
-
-                if ($result) {
-                    error_log("Successfully inserted file into database: " . $file_name);
-                    $uploaded_files[] = $file_name;
+        foreach ($removed_files as $file_id) {
+            $file_id = intval($file_id);
+            
+            // Verify the file belongs to this record and user has permission
+            $check_sql = "SELECT rf.*, r.created_by 
+                         FROM record_files rf 
+                         JOIN records r ON rf.record_id = r.record_id 
+                         WHERE rf.file_id = ? AND rf.record_id = ?";
+            $check_stmt = $pdo->prepare($check_sql);
+            $check_stmt->execute([$file_id, $record_id]);
+            $file_info = $check_stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($file_info) {
+                // Check permissions - user must be creator or have admin role
+                $user_sql = "SELECT role_id FROM users WHERE user_id = ?";
+                $user_stmt = $pdo->prepare($user_sql);
+                $user_stmt->execute([$user_id]);
+                $user = $user_stmt->fetch(PDO::FETCH_ASSOC);
+                
+                $can_delete = false;
+                
+                // Admin and RMO can delete any file
+                if (in_array($user['role_id'], [1, 2])) {
+                    $can_delete = true;
+                }
+                // Creator can delete their own files
+                elseif ($file_info['created_by'] == $user_id) {
+                    $can_delete = true;
+                }
+                
+                if ($can_delete) {
+                    // CORRECTED: Use DELETE instead of UPDATE is_deleted
+                    $delete_sql = "DELETE FROM record_files WHERE file_id = ?";
+                    $delete_stmt = $pdo->prepare($delete_sql);
+                    $delete_result = $delete_stmt->execute([$file_id]);
+                    
+                    if ($delete_result) {
+                        error_log("Successfully deleted file ID: $file_id");
+                        
+                        // Optional: Delete physical file
+                        if (file_exists($file_info['file_path'])) {
+                            unlink($file_info['file_path']);
+                            error_log("Physical file deleted: " . $file_info['file_path']);
+                        }
+                    } else {
+                        error_log("Failed to delete file ID: $file_id");
+                    }
                 } else {
-                    error_log("Failed to insert file into database: " . $file_name);
-                    throw new Exception("Failed to save file information to database: {$file_name}");
+                    error_log("User doesn't have permission to delete file ID: $file_id");
                 }
             } else {
-                error_log("Failed to move uploaded file: " . $file_name);
-                throw new Exception("Failed to upload file: {$file_name}");
+                error_log("File not found or doesn't belong to record: $file_id");
             }
-        } else {
-            error_log("File upload error for {$files['name'][$i]}: " . $files['error'][$i]);
         }
+    } else {
+        error_log("No files to remove");
     }
-
-    error_log("Total files uploaded successfully: " . count($uploaded_files));
-    return $uploaded_files;
 }
+
+function handleFileUploads($pdo, $record_id, $user_id) {
+    error_log("Handling file uploads");
+    
+    if (!empty($_FILES['attachments']['name'][0])) {
+        $upload_dir = '../uploads/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0777, true);
+        }
+
+        $files = $_FILES['attachments'];
+        $file_tags = $_POST['file_tags'] ?? [];
+
+        for ($i = 0; $i < count($files['name']); $i++) {
+            if ($files['error'][$i] === UPLOAD_ERR_OK) {
+                $file_name = $files['name'][$i];
+                $file_tmp = $files['tmp_name'][$i];
+                $file_size = $files['size'][$i];
+                $file_type = $files['type'][$i];
+                $file_tag = $file_tags[$i] ?? '';
+
+                // Generate unique filename
+                $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
+                $unique_name = uniqid() . '_' . time() . '.' . $file_extension;
+                $file_path = $upload_dir . $unique_name;
+
+                if (move_uploaded_file($file_tmp, $file_path)) {
+                    $sql = "INSERT INTO record_files (
+                        record_id, file_name, file_path, file_type, file_size, file_tag, uploaded_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute([
+                        $record_id,
+                        $file_name,
+                        $file_path,
+                        $file_type,
+                        $file_size,
+                        $file_tag,
+                        $user_id
+                    ]);
+
+                    error_log("File uploaded successfully: $file_name");
+                } else {
+                    error_log("Failed to move uploaded file: $file_name");
+                }
+            }
+        }
+    } else {
+        error_log("No new files to upload");
+    }
+}
+
+function handleFileTagUpdates($pdo) {
+    error_log("Handling file tag updates");
+    
+    if (!empty($_POST['existing_file_tags']) && is_array($_POST['existing_file_tags'])) {
+        foreach ($_POST['existing_file_tags'] as $file_id => $file_tag) {
+            $file_id = intval($file_id);
+            $file_tag = trim($file_tag);
+            
+            $sql = "UPDATE record_files SET file_tag = ? WHERE file_id = ?";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$file_tag, $file_id]);
+            
+            error_log("Updated tag for file ID: $file_id to: $file_tag");
+        }
+    } else {
+        error_log("No file tags to update");
+    }
+}
+?>

@@ -1,11 +1,9 @@
 /* ===== RESET & GENERAL STYLES ===== */
 body {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f0f4f8;
-  padding: 1rem;
-  min-height: 10vh;
-  color: #37474f;
   margin: 0;
+  font-family: "Poppins", sans-serif;
+  background: #f4f6f9;
+  display: flex;
 }
 
 main {
@@ -22,7 +20,7 @@ main {
   border-radius: 12px;
   box-shadow: 0 6px 15px rgba(0, 0, 0, 0.08);
   border: 1px solid #cfd8dc;
-  height: 750px;
+  height: 700px;
 }
 
 /* Header and Actions */
@@ -150,22 +148,23 @@ thead {
 }
 
 th {
-  padding: 1rem 0.75rem;
-  text-align: left;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #000000;
+  background: #f2f4f7;
+  text-align: center;
+  padding: 16px 20px;
+  font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  vertical-align: middle;
-  border-bottom: 2px solid #1c1c1c;
+  color: #34495e;
+  border-bottom: 2px solid #34495e;
+  font-weight: 600;
+  letter-spacing: 0.3px;
 }
 
 /* REMOVE ALL TEXT TRUNCATION FROM TABLE CELLS */
 td {
   padding: 1rem 0.75rem;
-  border-bottom: 1px solid #d3d3d3;
+  font-size: 14px;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
   white-space: normal; /* Changed from nowrap to normal */
   vertical-align: middle;
   text-align: left;
@@ -176,7 +175,9 @@ td {
 }
 
 /* Specific column alignments - REMOVE ALL TRUNCATION */
-th:nth-child(1), td:nth-child(1) { /* RECORD SERIES CODE */
+th:nth-child(1),
+td:nth-child(1) {
+  /* RECORD SERIES CODE */
   padding-left: 1.5rem;
   width: 12%;
   white-space: normal;
@@ -186,7 +187,9 @@ th:nth-child(1), td:nth-child(1) { /* RECORD SERIES CODE */
   word-wrap: break-word;
 }
 
-th:nth-child(2), td:nth-child(2) { /* RECORD TITLE */
+th:nth-child(2),
+td:nth-child(2) {
+  /* RECORD TITLE */
   width: 25%;
   white-space: normal;
   overflow: visible;
@@ -195,7 +198,9 @@ th:nth-child(2), td:nth-child(2) { /* RECORD TITLE */
   word-wrap: break-word;
 }
 
-th:nth-child(3), td:nth-child(3) { /* DEPARTMENT */
+th:nth-child(3),
+td:nth-child(3) {
+  /* DEPARTMENT */
   width: 12%;
   text-align: center;
   white-space: normal;
@@ -205,7 +210,9 @@ th:nth-child(3), td:nth-child(3) { /* DEPARTMENT */
   word-wrap: break-word;
 }
 
-th:nth-child(4), td:nth-child(4) { /* INCLUSIVE DATE */
+th:nth-child(4),
+td:nth-child(4) {
+  /* INCLUSIVE DATE */
   width: 15%;
   text-align: center;
   white-space: normal;
@@ -215,7 +222,9 @@ th:nth-child(4), td:nth-child(4) { /* INCLUSIVE DATE */
   word-wrap: break-word;
 }
 
-th:nth-child(5), td:nth-child(5) { /* RETENTION */
+th:nth-child(5),
+td:nth-child(5) {
+  /* RETENTION */
   width: 10%;
   text-align: center;
   white-space: normal;
@@ -225,7 +234,9 @@ th:nth-child(5), td:nth-child(5) { /* RETENTION */
   word-wrap: break-word;
 }
 
-th:nth-child(6), td:nth-child(6) { /* DISPOSITION */
+th:nth-child(6),
+td:nth-child(6) {
+  /* DISPOSITION */
   width: 12%;
   text-align: center;
   white-space: normal;
@@ -235,7 +246,9 @@ th:nth-child(6), td:nth-child(6) { /* DISPOSITION */
   word-wrap: break-word;
 }
 
-th:nth-child(7), td:nth-child(7) { /* STATUS */
+th:nth-child(7),
+td:nth-child(7) {
+  /* STATUS */
   width: 10%;
   text-align: center;
   white-space: normal;
@@ -245,7 +258,9 @@ th:nth-child(7), td:nth-child(7) { /* STATUS */
   word-wrap: break-word;
 }
 
-th:nth-child(8), td:nth-child(8) { /* ACTION */
+th:nth-child(8),
+td:nth-child(8) {
+  /* ACTION */
   width: 8%;
   text-align: center;
   padding-right: 1.5rem;
@@ -287,7 +302,7 @@ td .edit-action-btn {
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.4rem 0.9rem;
+  padding: 0.4rem 0rem;
   border-radius: 6px;
   font-size: 0.75rem;
   font-weight: 700;
@@ -295,8 +310,8 @@ td .edit-action-btn {
 }
 
 .badge.active {
-  background-color: #4caf50;
-  color: white;
+  background-color: #e7f7ef;
+  color: #1ea97c;
 }
 
 .badge.inactive {
@@ -305,8 +320,8 @@ td .edit-action-btn {
 }
 
 .badge.archived {
-  background-color: #ff9800;
-  color: white;
+  background-color: #fff4e6;
+  color: #f59e0b;
 }
 
 /* ===== MODAL STYLES ===== */
@@ -832,13 +847,12 @@ td .edit-action-btn {
   font-size: 1.2rem;
 }
 
-
 /* ===== RESPONSIVE STYLES ===== */
 @media (min-width: 640px) {
   body {
     padding: 2rem;
   }
-  
+
   .dashboard-card {
     padding: 1rem;
   }
@@ -849,23 +863,23 @@ td .edit-action-btn {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .header-title-block {
     min-width: 100%;
     margin-bottom: 1rem;
     padding-right: 0;
   }
-  
+
   .actions {
     flex-wrap: wrap;
     justify-content: stretch;
   }
-  
+
   .button {
     flex-grow: 1;
     justify-content: center;
   }
-  
+
   .button.icon-button {
     flex-grow: 0;
     width: auto;
@@ -890,11 +904,11 @@ td .edit-action-btn {
     width: auto;
     min-width: 150px;
   }
-  
+
   .filter-apply-btn {
     width: auto;
   }
-  
+
   .advanced-filters-row {
     grid-template-columns: repeat(2, 1fr);
   }

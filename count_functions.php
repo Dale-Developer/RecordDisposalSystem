@@ -36,17 +36,27 @@ function getRecordCounts($pdo)
         $disposal_stmt = $pdo->query($disposal_query);
         $counts['for_disposal'] = $disposal_stmt->fetch()['count'];
 
-        // Count pending requests (records due for archive/disposal but not yet processed)
-        $pending_query = "
-            SELECT COUNT(*) as count 
-            FROM records 
-            WHERE status = 'Active' 
-            AND (
-                (disposition_type = 'Archive' AND DATE_ADD(date_created, INTERVAL retention_period YEAR) <= CURDATE())
-                OR 
-                (disposition_type = 'Dispose' AND DATE_ADD(date_created, INTERVAL retention_period YEAR) <= CURDATE())
-            )
-        ";
+        // Count pending archive requests
+        $table_exists = $pdo->query("SHOW TABLES LIKE 'archive_requests'")->rowCount() > 0;
+        
+        if ($table_exists) {
+            // If requests table exists, count actual pending requests
+            $pending_query = "
+                SELECT COUNT(*) as count 
+                FROM archive_requests 
+                WHERE status = 'Pending'
+            ";
+        } else {
+            // Fallback: count records due for archive based on retention period
+            $pending_query = "
+                SELECT COUNT(*) as count 
+                FROM records 
+                WHERE status = 'Active' 
+                AND disposition_type = 'Archive'
+                AND DATE_ADD(date_created, INTERVAL retention_period YEAR) <= CURDATE()
+            ";
+        }
+        
         $pending_stmt = $pdo->query($pending_query);
         $counts['pending_request'] = $pending_stmt->fetch()['count'];
 
@@ -58,7 +68,7 @@ function getRecordCounts($pdo)
 }
 
 /**
- * Get records due for archive
+ * Get records due for archive (only records due exactly one day before archive date)
  */
 function getRecordsDueForArchive($pdo)
 {
@@ -71,17 +81,39 @@ function getRecordsDueForArchive($pdo)
                 r.record_title,
                 o.office_name,
                 DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) as due_date,
-                'for archiving' as action
+                'due tomorrow' as action
             FROM records r
             INNER JOIN offices o ON r.office_id = o.office_id
             WHERE r.status = 'Active' 
             AND r.disposition_type = 'Archive'
-            AND DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+            AND DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
             ORDER BY due_date ASC 
             LIMIT 15
         ";
         $stmt = $pdo->query($query);
-        $records = $stmt->fetchAll();
+        $results = $stmt->fetchAll();
+
+        foreach ($results as $row) {
+            // Get file information for this record
+            $files_query = "
+                SELECT file_id, file_name, file_path 
+                FROM record_files 
+                WHERE record_id = ? 
+                ORDER BY file_id ASC
+            ";
+            $files_stmt = $pdo->prepare($files_query);
+            $files_stmt->execute([$row['record_id']]);
+            $files = $files_stmt->fetchAll();
+
+            $records[] = [
+                'record_id' => $row['record_id'],
+                'record_title' => $row['record_title'],
+                'office_name' => $row['office_name'],
+                'due_date' => $row['due_date'],
+                'action' => $row['action'],
+                'files' => $files
+            ];
+        }
 
     } catch (Exception $e) {
         error_log("Error getting records due for archive: " . $e->getMessage());
@@ -98,30 +130,96 @@ function getRecentArchiveRequests($pdo)
     $requests = [];
 
     try {
-        $query = "
-            SELECT 
-                r.record_id,
-                r.record_title,
-                CONCAT(u.first_name, ' ', u.last_name) as requested_by,
-                DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) as request_date
-            FROM records r
-            INNER JOIN users u ON r.created_by = u.user_id
-            WHERE r.status = 'Active' 
-            AND r.disposition_type = 'Archive'
-            AND DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) <= CURDATE()
-            ORDER BY request_date DESC 
-            LIMIT 7
-        ";
+        // Check if archive_requests table exists
+        $table_exists = $pdo->query("SHOW TABLES LIKE 'archive_requests'")->rowCount() > 0;
+        
+        if ($table_exists) {
+            // Get actual archive requests with file information
+            $query = "
+                SELECT 
+                    ar.request_id,
+                    r.record_id,
+                    r.record_title,
+                    CONCAT(u.first_name, ' ', u.last_name) as requested_by,
+                    ar.request_date,
+                    ar.status,
+                    rf.file_id,
+                    rf.file_name,
+                    rf.file_path
+                FROM archive_requests ar
+                INNER JOIN records r ON ar.record_id = r.record_id
+                INNER JOIN users u ON ar.requested_by = u.user_id
+                LEFT JOIN record_files rf ON r.record_id = rf.record_id
+                ORDER BY ar.request_date DESC 
+                LIMIT 7
+            ";
+        } else {
+            // Fallback: get records that are due for archive with file information
+            $query = "
+                SELECT 
+                    r.record_id,
+                    r.record_title,
+                    CONCAT(u.first_name, ' ', u.last_name) as requested_by,
+                    DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) as request_date,
+                    'Auto-generated' as status,
+                    rf.file_id,
+                    rf.file_name,
+                    rf.file_path
+                FROM records r
+                INNER JOIN users u ON r.created_by = u.user_id
+                LEFT JOIN record_files rf ON r.record_id = rf.record_id
+                WHERE r.status = 'Active' 
+                AND r.disposition_type = 'Archive'
+                AND DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) <= CURDATE()
+                ORDER BY request_date DESC 
+                LIMIT 7
+            ";
+        }
+        
         $stmt = $pdo->query($query);
         $results = $stmt->fetchAll();
 
+        // Group files by request/record
+        $grouped_results = [];
         foreach ($results as $row) {
-            // Generate request code like AR-001, AR-002, etc.
-            $request_code = 'AR-' . str_pad($row['record_id'], 3, '0', STR_PAD_LEFT);
+            $key = $table_exists ? $row['request_id'] : $row['record_id'];
+            
+            if (!isset($grouped_results[$key])) {
+                $grouped_results[$key] = [
+                    'request_id' => $table_exists ? $row['request_id'] : null,
+                    'record_id' => $row['record_id'],
+                    'record_title' => $row['record_title'],
+                    'requested_by' => $row['requested_by'],
+                    'request_date' => $row['request_date'],
+                    'status' => $row['status'],
+                    'files' => []
+                ];
+            }
+            
+            // Add file information if available
+            if ($row['file_id']) {
+                $grouped_results[$key]['files'][] = [
+                    'file_id' => $row['file_id'],
+                    'file_name' => $row['file_name'],
+                    'file_path' => $row['file_path']
+                ];
+            }
+        }
+
+        foreach ($grouped_results as $row) {
+            if ($table_exists) {
+                $request_code = 'AR-' . str_pad($row['request_id'], 3, '0', STR_PAD_LEFT);
+                $status_badge = $row['status'] == 'Pending' ? ' <span style="color: orange;">(Pending)</span>' : '';
+            } else {
+                $request_code = 'AR-' . str_pad($row['record_id'], 3, '0', STR_PAD_LEFT);
+                $status_badge = ' <span style="color: gray;">(Auto)</span>';
+            }
+            
             $requests[] = [
                 'code' => $request_code,
-                'details' => date('m/d/Y', strtotime($row['request_date'])) . ' - ' . $row['requested_by'],
-                'record_title' => $row['record_title']
+                'details' => date('m/d/Y', strtotime($row['request_date'])) . ' - ' . $row['requested_by'] . $status_badge,
+                'record_title' => $row['record_title'],
+                'files' => $row['files']
             ];
         }
 
@@ -202,5 +300,29 @@ function getDisposalScheduleCounts($pdo)
     }
 
     return $counts;
+}
+
+/**
+ * Get file information for a specific record
+ */
+function getRecordFiles($pdo, $record_id)
+{
+    $files = [];
+    
+    try {
+        $query = "
+            SELECT file_id, file_name, file_path, uploaded_at 
+            FROM record_files 
+            WHERE record_id = ? 
+            ORDER BY uploaded_at DESC
+        ";
+        $stmt = $pdo->prepare($query);
+        $stmt->execute([$record_id]);
+        $files = $stmt->fetchAll();
+    } catch (Exception $e) {
+        error_log("Error getting record files: " . $e->getMessage());
+    }
+    
+    return $files;
 }
 ?>

@@ -95,12 +95,13 @@ try {
     .table-wrapper {
       overflow-x: auto;
     }
-    
+
     table {
       width: 100%;
-      table-layout: auto !important; /* Allow columns to expand based on content */
+      table-layout: auto !important;
+      /* Allow columns to expand based on content */
     }
-    
+
     td {
       white-space: normal !important;
       overflow: visible !important;
@@ -109,16 +110,26 @@ try {
       word-wrap: break-word !important;
       word-break: break-word !important;
     }
-    
+
     /* Remove all truncation from specific columns */
-    td:nth-child(1), /* RECORD SERIES CODE */
-    td:nth-child(2), /* RECORD TITLE */
-    td:nth-child(3), /* DEPARTMENT */
-    td:nth-child(4), /* INCLUSIVE DATE */
-    td:nth-child(5), /* RETENTION */
-    td:nth-child(6), /* DISPOSITION */
-    td:nth-child(7), /* STATUS */
-    td:nth-child(8)  /* ACTION */ {
+    td:nth-child(1),
+    /* RECORD SERIES CODE */
+    td:nth-child(2),
+    /* RECORD TITLE */
+    td:nth-child(3),
+    /* DEPARTMENT */
+    td:nth-child(4),
+    /* INCLUSIVE DATE */
+    td:nth-child(5),
+    /* RETENTION */
+    td:nth-child(6),
+    /* DISPOSITION */
+    td:nth-child(7),
+    /* STATUS */
+    td:nth-child(8)
+
+    /* ACTION */
+      {
       white-space: normal !important;
       overflow: visible !important;
       text-overflow: unset !important;
@@ -128,7 +139,9 @@ try {
     }
 
     /* CENTER THE RECORD TITLE COLUMN */
-    th:nth-child(2), td:nth-child(2) { /* RECORD TITLE */
+    th:nth-child(2),
+    td:nth-child(2) {
+      /* RECORD TITLE */
       text-align: center !important;
     }
 
@@ -239,7 +252,8 @@ try {
 
     .file-status {
       font-size: 12px;
-      color: #4caf50;
+      background-color: #e7f7ef;
+      color: #1ea97c;
       font-weight: 500;
     }
 
@@ -259,6 +273,44 @@ try {
     #recordsTableBody tr {
       transition: all 0.3s ease;
     }
+
+    /* File actions styles */
+    .file-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .view-file-btn, .download-file-btn {
+      padding: 4px 8px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .view-file-btn {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .download-file-btn {
+      background: #2196F3;
+      color: white;
+    }
+
+    .view-file-btn:hover, .download-file-btn:hover {
+      opacity: 0.8;
+      transform: translateY(-1px);
+    }
+
+    .file-tag {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+      font-style: italic;
+    }
   </style>
 </head>
 
@@ -268,35 +320,36 @@ try {
   </nav>
   <main>
     <!-- Main Content Container (Dashboard Card) -->
-    <div class="dashboard-card">
+    <header class="header">
+      <div class="header-title-block">
+        <h1>RECORDS MANAGEMENT</h1>
+      </div>
+
+      <div class="actions">
+
+        <!-- Filter Button -->
+        <button class="button filter-button" onclick="showFilterModal()">
+          Filter
+          <i class='bx bx-filter'></i>
+        </button>
+
+        <!-- Primary Button (Add New Record) -->
+        <button class="button primary-action-btn" onclick="openRecordModal('add')">
+          <!-- <i class='bx bx-edit'></i> -->
+          <i class='bx bxs-folder-plus'></i>
+          Add New Record
+        </button>
+
+        <!-- Edit/Pencil Button -->
+        <!-- <button class="button icon-button" onclick="console.log('Bulk edit mode toggled')">
+          <i class='bx bx-edit'></i>
+        </button> -->
+
+      </div>
+    </header>
+    <div class="card dashboard-card">
 
       <!-- Header and Action Bar -->
-      <header class="header">
-        <div class="header-title-block">
-          <h1>RECORDS MANAGEMENT</h1>
-        </div>
-
-        <div class="actions">
-
-          <!-- Filter Button -->
-          <button class="button filter-button" onclick="showFilterModal()">
-            Filter
-            <i class='bx bx-edit'></i>
-          </button>
-
-          <!-- Primary Button (Add New Record) -->
-          <button class="button primary-action-btn" onclick="openRecordModal('add')">
-            <i class='bx bx-edit'></i>
-            Add New Record
-          </button>
-
-          <!-- Edit/Pencil Button -->
-          <!-- <button class="button icon-button" onclick="console.log('Bulk edit mode toggled')">
-            <i class='bx bx-edit'></i>
-          </button> -->
-
-        </div>
-      </header>
 
       <!-- Responsive Table Container -->
       <div class="table-wrapper">
@@ -322,7 +375,8 @@ try {
               </tr>
             <?php else: ?>
               <?php foreach ($records as $record): ?>
-                <tr data-record-id="<?= $record['record_id'] ?>" data-office-name="<?= htmlspecialchars($record['office_name']) ?>">
+                <tr data-record-id="<?= $record['record_id'] ?>"
+                  data-office-name="<?= htmlspecialchars($record['office_name']) ?>">
                   <td><?= htmlspecialchars($record['record_series_code'] ?? 'N/A') ?></td>
                   <td><?= htmlspecialchars($record['record_title']) ?></td>
                   <td><?= htmlspecialchars($record['office_name']) ?></td>
@@ -627,6 +681,15 @@ try {
           <div class="view-field view-description" id="viewDescription"></div>
         </div>
 
+        <!-- Files Section -->
+        <div class="uploaded-files-section" style="margin-top: 20px;">
+          <h2 class="section-header">ATTACHED FILES (<span id="viewFileCount">0</span>)</h2>
+          <div class="uploaded-files-list" id="viewUploadedFilesList">
+            <div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">
+              No files attached to this record.
+            </div>
+          </div>
+        </div>
         <!-- Close Button -->
         <div class="action-buttons">
           <button class="button-action cancel" onclick="hideViewRecordModal()">CLOSE</button>
@@ -658,131 +721,323 @@ try {
 
     let selectedFiles = [];
     let select2Initialized = false;
+    let removedFiles = []; // Track files marked for deletion
+
+    // --- AJAX Functions for Data Retrieval ---
+    function fetchRecordFiles(recordId) {
+        console.log('📁 Fetching files for record:', recordId);
+        return fetch(`../get_record_files.php?id=${recordId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    console.log(`✅ Successfully loaded ${data.files ? data.files.length : 0} files`);
+                    return data.files || [];
+                } else {
+                    throw new Error(data.message || 'Failed to load files');
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error fetching files:', error);
+                return [];
+            });
+    }
+
+    function fetchRecordData(recordId) {
+      console.log('🔄 Fetching record data for ID:', recordId);
+
+      return fetch(`../get_record.php?id=${recordId}`)
+        .then(response => {
+          console.log('📡 Response status:', response.status, response.statusText);
+
+          if (response.status === 500) {
+            return response.text().then(errorText => {
+              console.error('❌ PHP 500 Error Detected');
+              let errorMessage = 'Server Error (500) - Check PHP configuration';
+              throw new Error(errorMessage);
+            });
+          }
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          return response.json();
+        })
+        .then(data => {
+          if (data.success && data.record) {
+            console.log('✅ Record data loaded successfully');
+            return data.record;
+          } else {
+            throw new Error(data.message || 'Failed to load record data');
+          }
+        })
+        .catch(error => {
+          console.error('❌ fetchRecordData error:', error);
+          throw error;
+        });
+    }
+
+    // --- File Management Functions ---
+    function displayExistingFiles(files) {
+        console.log('🎯 Displaying existing files:', files);
+        if (!files || files.length === 0) {
+            uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
+            updateFileCount();
+            return;
+        }
+
+        const existingFilesHTML = files.map((file, index) => `
+            <div class="file-item existing-file" data-file-id="${file.file_id}">
+                <div class="file-info">
+                    <div class="file-name">
+                        <i class="fas fa-paperclip"></i> ${file.file_name}
+                    </div>
+                    <div class="file-size">${formatFileSize(file.file_size)}</div>
+                </div>
+                <input type="text" class="file-tag-input" placeholder="Add tag (optional)" 
+                       name="existing_file_tags[${file.file_id}]" value="${file.file_tag || ''}">
+                <span class="file-status">Uploaded</span>
+                <button type="button" class="remove-file-btn" onclick="removeExistingFile(${file.file_id}, '${file.file_name.replace(/'/g, "\\'")}')">
+                    <i class="fas fa-times"></i>
+                </button>
+                <input type="hidden" name="existing_files[]" value="${file.file_id}">
+            </div>
+        `).join('');
+
+        uploadedFilesList.innerHTML = existingFilesHTML;
+        updateFileCount();
+    }
+
+    // --- FILE DELETION FUNCTION ---
+    function removeExistingFile(fileId, fileName) {
+        if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        console.log('🗑️ Removing existing file ID:', fileId);
+        
+        // Add to removed files array
+        if (!removedFiles.includes(fileId)) {
+            removedFiles.push(fileId);
+        }
+
+        // Create hidden input for form submission
+        let removalInput = document.querySelector(`input[name="removed_files[]"][value="${fileId}"]`);
+        if (!removalInput) {
+            removalInput = document.createElement('input');
+            removalInput.type = 'hidden';
+            removalInput.name = 'removed_files[]';
+            removalInput.value = fileId;
+            recordForm.appendChild(removalInput);
+        }
+        
+        // Remove from UI immediately
+        const fileElement = document.querySelector(`.existing-file[data-file-id="${fileId}"]`);
+        if (fileElement) {
+            fileElement.style.opacity = '0.5';
+            fileElement.style.textDecoration = 'line-through';
+            fileElement.querySelector('.file-status').textContent = 'Marked for deletion';
+            fileElement.querySelector('.remove-file-btn').disabled = true;
+            
+            // Optional: Remove completely after a delay
+            setTimeout(() => {
+                fileElement.remove();
+                updateFileCount();
+            }, 1000);
+        }
+        
+        updateFileCount();
+        showToast(`File "${fileName}" marked for deletion`);
+    }
+
+    function displayViewRecordFiles(files) {
+        console.log('👀 Displaying files in view modal:', files);
+        
+        const filesContainer = document.getElementById('viewUploadedFilesList');
+        const fileCountElement = document.getElementById('viewFileCount');
+        
+        if (!files || files.length === 0) {
+            filesContainer.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files attached to this record.</div>';
+            fileCountElement.textContent = '0';
+            return;
+        }
+
+        filesContainer.innerHTML = files.map(file => {
+            const viewUrl = `../view_file.php?id=${file.file_id}`;
+            const downloadUrl = `../download_file.php?id=${file.file_id}`;
+            
+            return `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-name">
+                            <i class="fas fa-paperclip"></i> ${file.file_name}
+                        </div>
+                        <div class="file-size">${formatFileSize(file.file_size)}</div>
+                        ${file.file_tag ? `<div class="file-tag">Tag: ${file.file_tag}</div>` : ''}
+                    </div>
+                    
+                </div>
+            `;
+        }).join('');
+        
+        fileCountElement.textContent = files.length;
+    }
+
+    function updateFileList() {
+        const existingFileElements = document.querySelectorAll('.existing-file');
+        const totalCount = existingFileElements.length + selectedFiles.length;
+        fileCount.textContent = totalCount;
+
+        let newFilesHTML = '';
+        
+        if (selectedFiles.length > 0) {
+            newFilesHTML = selectedFiles.map((file, index) => `
+                <div class="file-item new-file" data-file-index="${index}">
+                    <div class="file-info">
+                        <div class="file-name">
+                            <i class="fas fa-upload"></i> ${file.name}
+                        </div>
+                        <div class="file-size">${formatFileSize(file.size)}</div>
+                    </div>
+                    <input type="text" class="file-tag-input" placeholder="Add tag (optional)" name="file_tags[]">
+                    <span class="file-status">Ready to upload</span>
+                    <button type="button" class="remove-file-btn" onclick="removeFile(${index})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        if (totalCount === 0) {
+            uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
+        } else {
+            const existingFilesHTML = Array.from(existingFileElements).map(el => el.outerHTML).join('');
+            uploadedFilesList.innerHTML = existingFilesHTML + newFilesHTML;
+        }
+    }
+
+    function updateFileCount() {
+        const existingFileElements = document.querySelectorAll('.existing-file');
+        const totalCount = existingFileElements.length + selectedFiles.length;
+        fileCount.textContent = totalCount;
+    }
 
     // --- Filter Functions ---
     function applyFilters() {
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-        const department = document.getElementById('departmentSelect').value;
-        const classification = document.getElementById('classificationSelect').value;
-        const disposition = document.getElementById('dispositionSelect').value;
-        const status = document.getElementById('statusSelect').value;
-        const retention = document.getElementById('retentionSelect').value;
-        const dateFrom = document.getElementById('dateFromInput').value;
-        const dateTo = document.getElementById('dateToInput').value;
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      const department = document.getElementById('departmentSelect').value;
+      const classification = document.getElementById('classificationSelect').value;
+      const disposition = document.getElementById('dispositionSelect').value;
+      const status = document.getElementById('statusSelect').value;
+      const retention = document.getElementById('retentionSelect').value;
+      const dateFrom = document.getElementById('dateFromInput').value;
+      const dateTo = document.getElementById('dateToInput').value;
 
-        const rows = document.querySelectorAll('#recordsTableBody tr');
-        let visibleCount = 0;
+      const rows = document.querySelectorAll('#recordsTableBody tr');
+      let visibleCount = 0;
 
-        rows.forEach(row => {
-            if (row.querySelector('td[colspan="8"]')) {
-                // This is the "no records" row, skip it
-                return;
-            }
-
-            let showRow = true;
-
-            // Search filter
-            if (searchTerm) {
-                const recordTitle = row.cells[1].textContent.toLowerCase();
-                const recordCode = row.cells[0].textContent.toLowerCase();
-                if (!recordTitle.includes(searchTerm) && !recordCode.includes(searchTerm)) {
-                    showRow = false;
-                }
-            }
-
-            // Department filter
-            if (department && showRow) {
-                const officeName = row.getAttribute('data-office-name');
-                const departmentText = document.getElementById('departmentSelect').options[document.getElementById('departmentSelect').selectedIndex].text;
-                if (officeName !== departmentText) {
-                    showRow = false;
-                }
-            }
-
-            // Status filter
-            if (status && showRow) {
-                const statusBadge = row.cells[6].querySelector('.badge');
-                if (statusBadge && statusBadge.textContent.toLowerCase() !== status) {
-                    showRow = false;
-                }
-            }
-
-            // Retention filter
-            if (retention && showRow) {
-                const retentionBadge = row.cells[4].querySelector('.retention-badge');
-                if (retentionBadge && retentionBadge.textContent !== retention) {
-                    showRow = false;
-                }
-            }
-
-            // Disposition filter
-            if (disposition && showRow) {
-                const dispositionCell = row.cells[5].textContent;
-                if (dispositionCell !== disposition) {
-                    showRow = false;
-                }
-            }
-
-            // Show/hide row
-            row.style.display = showRow ? '' : 'none';
-            if (showRow) visibleCount++;
-        });
-
-        // Update filter button appearance
-        const filterButton = document.querySelector('.filter-button');
-        const hasActiveFilters = searchTerm || department || classification || disposition || status || retention || dateFrom || dateTo;
-        
-        if (hasActiveFilters) {
-            filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-            filterButton.style.background = '#1f366c';
-            filterButton.style.color = 'white';
-        } else {
-            filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-            filterButton.style.background = '';
-            filterButton.style.color = '';
+      rows.forEach(row => {
+        if (row.querySelector('td[colspan="8"]')) {
+          return;
         }
 
-        // Show message if no records found
-        const noRecordsRow = document.querySelector('#recordsTableBody tr td[colspan="8"]');
-        if (visibleCount === 0) {
-            if (!noRecordsRow) {
-                const tbody = document.getElementById('recordsTableBody');
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">No records match your filters.</td></tr>`;
-            }
-        } else if (noRecordsRow && noRecordsRow.textContent.includes('match your filters')) {
-            // Reload the original content if filters are cleared and we had a "no match" message
-            location.reload();
+        let showRow = true;
+
+        if (searchTerm) {
+          const recordTitle = row.cells[1].textContent.toLowerCase();
+          const recordCode = row.cells[0].textContent.toLowerCase();
+          if (!recordTitle.includes(searchTerm) && !recordCode.includes(searchTerm)) {
+            showRow = false;
+          }
         }
 
-        hideFilterModal();
-        showToast('Filters applied successfully');
-    }
+        if (department && showRow) {
+          const officeName = row.getAttribute('data-office-name');
+          const departmentText = document.getElementById('departmentSelect').options[document.getElementById('departmentSelect').selectedIndex].text;
+          if (officeName !== departmentText) {
+            showRow = false;
+          }
+        }
 
-    function clearFilters() {
-        // Reset all filter inputs
-        document.getElementById('searchInput').value = '';
-        document.getElementById('departmentSelect').value = '';
-        document.getElementById('classificationSelect').value = '';
-        document.getElementById('dispositionSelect').value = '';
-        document.getElementById('statusSelect').value = '';
-        document.getElementById('retentionSelect').value = '';
-        document.getElementById('dateFromInput').value = '';
-        document.getElementById('dateToInput').value = '';
+        if (status && showRow) {
+          const statusBadge = row.cells[6].querySelector('.badge');
+          if (statusBadge && statusBadge.textContent.toLowerCase() !== status) {
+            showRow = false;
+          }
+        }
 
-        // Show all rows
-        const rows = document.querySelectorAll('#recordsTableBody tr');
-        rows.forEach(row => {
-            row.style.display = '';
-        });
+        if (retention && showRow) {
+          const retentionBadge = row.cells[4].querySelector('.retention-badge');
+          if (retentionBadge && retentionBadge.textContent !== retention) {
+            showRow = false;
+          }
+        }
 
-        // Reset filter button
-        const filterButton = document.querySelector('.filter-button');
+        if (disposition && showRow) {
+          const dispositionCell = row.cells[5].textContent;
+          if (dispositionCell !== disposition) {
+            showRow = false;
+          }
+        }
+
+        row.style.display = showRow ? '' : 'none';
+        if (showRow) visibleCount++;
+      });
+
+      const filterButton = document.querySelector('.filter-button');
+      const hasActiveFilters = searchTerm || department || classification || disposition || status || retention || dateFrom || dateTo;
+
+      if (hasActiveFilters) {
+        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
+        filterButton.style.background = '#1f366c';
+        filterButton.style.color = 'white';
+      } else {
         filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
         filterButton.style.background = '';
         filterButton.style.color = '';
+      }
 
-        hideFilterModal();
-        showToast('Filters cleared');
+      const noRecordsRow = document.querySelector('#recordsTableBody tr td[colspan="8"]');
+      if (visibleCount === 0) {
+        if (!noRecordsRow) {
+          const tbody = document.getElementById('recordsTableBody');
+          tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">No records match your filters.</td></tr>`;
+        }
+      } else if (noRecordsRow && noRecordsRow.textContent.includes('match your filters')) {
+        location.reload();
+      }
+
+      hideFilterModal();
+      showToast('Filters applied successfully');
+    }
+
+    function clearFilters() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('departmentSelect').value = '';
+      document.getElementById('classificationSelect').value = '';
+      document.getElementById('dispositionSelect').value = '';
+      document.getElementById('statusSelect').value = '';
+      document.getElementById('retentionSelect').value = '';
+      document.getElementById('dateFromInput').value = '';
+      document.getElementById('dateToInput').value = '';
+
+      const rows = document.querySelectorAll('#recordsTableBody tr');
+      rows.forEach(row => {
+        row.style.display = '';
+      });
+
+      const filterButton = document.querySelector('.filter-button');
+      filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
+      filterButton.style.background = '';
+      filterButton.style.color = '';
+
+      hideFilterModal();
+      showToast('Filters cleared');
     }
 
     // --- Date Calculation Functions ---
@@ -845,15 +1100,22 @@ try {
             const category = selectedOption.data('category');
             const authority = selectedOption.data('authority');
 
+            console.log('Classification changed:', {
+              retention: retention,
+              disposition: disposition,
+              category: category,
+              authority: authority
+            });
+
             if (retention) {
               $('#retentionPeriod').val(retention);
-              $('#disposition').val(disposition);
+              $('#disposition').val(disposition || '');
               calculateEndDate();
 
               $('#infoRetention').text(retention);
-              $('#infoDisposition').text(disposition);
-              $('#infoCategory').text(category);
-              $('#infoAuthority').text(authority);
+              $('#infoDisposition').text(disposition || 'Not specified');
+              $('#infoCategory').text(category || 'Not specified');
+              $('#infoAuthority').text(authority || 'Not specified');
               $('#classificationInfo').addClass('show');
             } else {
               $('#retentionPeriod').val('');
@@ -876,6 +1138,20 @@ try {
       const uploadArea = document.getElementById('uploadArea');
       const fileInput = document.getElementById('fileUpload');
 
+      // Clear any existing event listeners by cloning and replacing
+      const newFileInput = fileInput.cloneNode(true);
+      fileInput.parentNode.replaceChild(newFileInput, fileInput);
+
+      // Set up the new file input
+      const currentFileInput = document.getElementById('fileUpload');
+      
+      currentFileInput.addEventListener('change', (e) => {
+        console.log('File input changed, files selected:', e.target.files.length);
+        handleFileSelect(e.target.files);
+        // Reset the input to allow selecting the same file again
+        currentFileInput.value = '';
+      });
+
       uploadArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadArea.classList.add('drag-over');
@@ -890,37 +1166,45 @@ try {
         e.preventDefault();
         uploadArea.classList.remove('drag-over');
         const files = e.dataTransfer.files;
+        console.log('Files dropped:', files.length);
         handleFileSelect(files);
+      });
+
+      // Click to select files
+      uploadArea.addEventListener('click', () => {
+        currentFileInput.click();
       });
     }
 
     function handleFileSelect(files) {
+      if (!files || files.length === 0) return;
+
       const newFiles = Array.from(files);
-      selectedFiles = [...selectedFiles, ...newFiles];
-      updateFileList();
-    }
+      
+      // Check for duplicates by filename and size
+      const uniqueNewFiles = newFiles.filter(newFile => {
+        const isDuplicate = selectedFiles.some(existingFile => 
+          existingFile.name === newFile.name && 
+          existingFile.size === newFile.size &&
+          existingFile.lastModified === newFile.lastModified
+        );
+        
+        if (isDuplicate) {
+          console.log('Skipping duplicate file:', newFile.name);
+          return false;
+        }
+        return true;
+      });
 
-    function updateFileList() {
-      fileCount.textContent = selectedFiles.length;
-
-      if (selectedFiles.length === 0) {
-        uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
-        return;
+      if (uniqueNewFiles.length > 0) {
+        selectedFiles = [...selectedFiles, ...uniqueNewFiles];
+        console.log('Added', uniqueNewFiles.length, 'new files. Total files:', selectedFiles.length);
+        updateFileList();
+        showToast(`Added ${uniqueNewFiles.length} file(s)`);
+      } else {
+        console.log('No new files to add - all were duplicates');
+        showToast('File already added', true);
       }
-
-      uploadedFilesList.innerHTML = selectedFiles.map((file, index) => `
-        <div class="file-item">
-            <div class="file-info">
-                <div class="file-name">${file.name}</div>
-                <div class="file-size">${formatFileSize(file.size)}</div>
-            </div>
-            <input type="text" class="file-tag-input" placeholder="Add tag (optional)" name="file_tags[]">
-            <span class="file-status">Ready</span>
-            <button type="button" class="remove-file-btn" onclick="removeFile(${index})">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    `).join('');
     }
 
     function formatFileSize(bytes) {
@@ -932,8 +1216,13 @@ try {
     }
 
     function removeFile(index) {
-      selectedFiles.splice(index, 1);
-      updateFileList();
+      if (index >= 0 && index < selectedFiles.length) {
+        const removedFile = selectedFiles[index];
+        selectedFiles.splice(index, 1);
+        updateFileList();
+        showToast(`Removed ${removedFile.name}`);
+        console.log('Removed file at index', index, 'Remaining files:', selectedFiles.length);
+      }
     }
 
     // --- UI Feedback Functions ---
@@ -1001,6 +1290,11 @@ try {
       document.getElementById('recordForm').reset();
       document.getElementById('recordId').value = '';
       selectedFiles = [];
+      removedFiles = []; // Clear removed files array
+      
+      // Remove all hidden removal inputs
+      document.querySelectorAll('input[name="removed_files[]"]').forEach(input => input.remove());
+      
       updateFileList();
 
       $('#retentionPeriod').val('');
@@ -1010,72 +1304,6 @@ try {
       if (select2Initialized) {
         $('#classification').val(null).trigger('change');
       }
-    }
-
-    // --- Enhanced Record Data Fetching with 500 Error Handling ---
-    function fetchRecordData(recordId) {
-      console.log('🔄 Fetching record data for ID:', recordId);
-
-      return fetch(`../get_record.php?id=${recordId}`)
-        .then(response => {
-          console.log('📡 Response status:', response.status, response.statusText);
-
-          if (response.status === 500) {
-            return response.text().then(errorText => {
-              console.error('❌ PHP 500 Error Detected');
-
-              let errorMessage = 'Server Error (500) - Check PHP configuration';
-
-              try {
-                const errorData = JSON.parse(errorText);
-                errorMessage = errorData.message || 'Server Error';
-                if (errorData.debug) {
-                  console.error('Debug info:', errorData.debug);
-                }
-              } catch (e) {
-                if (errorText.includes('Exception') || errorText.includes('Error') || errorText.includes('Fatal')) {
-                  const lines = errorText.split('\n');
-                  const errorLine = lines.find(line =>
-                    line.includes('Exception') ||
-                    line.includes('Error') ||
-                    line.includes('Fatal')
-                  );
-                  if (errorLine) {
-                    errorMessage = 'Server Error: ' + errorLine.replace(/<[^>]*>/g, '').substring(0, 150);
-                  }
-                }
-              }
-
-              throw new Error(errorMessage);
-            });
-          }
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          return response.text().then(text => {
-            console.log('📄 Response received');
-
-            try {
-              const data = JSON.parse(text);
-
-              if (data.success && data.record) {
-                console.log('✅ Record data loaded successfully');
-                return data.record;
-              } else {
-                throw new Error(data.message || 'Failed to load record data');
-              }
-            } catch (e) {
-              console.error('❌ JSON parse failed');
-              throw new Error('Invalid server response');
-            }
-          });
-        })
-        .catch(error => {
-          console.error('❌ fetchRecordData error:', error);
-          throw error;
-        });
     }
 
     // --- Record Modal Functions ---
@@ -1107,19 +1335,30 @@ try {
         saveRecordBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> LOADING...';
         saveRecordBtn.disabled = true;
 
-        fetchRecordData(recordId)
-          .then(record => {
+        // Load record data and files simultaneously via AJAX
+        Promise.all([
+            fetchRecordData(recordId),
+            fetchRecordFiles(recordId)
+        ])
+        .then(([record, files]) => {
             populateFormWithRecordData(record);
+            displayExistingFiles(files);
             saveRecordBtn.innerHTML = 'UPDATE RECORD';
             saveRecordBtn.disabled = false;
-          })
-          .catch(error => {
+        })
+        .catch(error => {
             console.error('Error loading record:', error);
             showToast('Error loading record data: ' + error.message, true);
             saveRecordBtn.innerHTML = 'UPDATE RECORD';
             saveRecordBtn.disabled = false;
-          });
+        });
       }
+    }
+
+    // --- EDIT FUNCTION ---
+    function handleEditClick(id) {
+      console.log('Edit clicked for record ID:', id);
+      openRecordModal('edit', id);
     }
 
     function populateFormWithRecordData(record) {
@@ -1128,7 +1367,10 @@ try {
       document.getElementById('recordTitle').value = record.record_title || '';
       document.getElementById('officeDepartment').value = record.office_id || '';
       document.getElementById('recordSeries').value = record.record_series_code || '';
+      
+      // Ensure disposition is set
       document.getElementById('disposition').value = record.disposition_type || '';
+      console.log('Disposition set to:', record.disposition_type);
 
       if (record.inclusive_date_from) {
         const fromDate = new Date(record.inclusive_date_from);
@@ -1151,6 +1393,13 @@ try {
         setTimeout(() => {
           if (select2Initialized) {
             $('#classification').val(record.class_id).trigger('change');
+            
+            // Force set disposition after classification is loaded
+            setTimeout(() => {
+              if (record.disposition_type) {
+                document.getElementById('disposition').value = record.disposition_type;
+              }
+            }, 500);
           } else {
             document.getElementById('classification').value = record.class_id;
             setTimeout(() => {
@@ -1161,11 +1410,6 @@ try {
           }
         }, 300);
       }
-    }
-
-    function handleEditClick(id) {
-      console.log('Edit clicked for record ID:', id);
-      openRecordModal('edit', id);
     }
 
     function saveAsDraft() {
@@ -1217,13 +1461,20 @@ try {
       document.getElementById('viewClassification').textContent = 'Loading...';
       document.getElementById('viewDescription').textContent = 'Loading...';
 
-      fetchRecordData(recordId)
-        .then(record => {
-          populateViewRecordModal(record);
-        })
-        .catch(error => {
-          console.error('Error loading record for view:', error);
+      // Clear previous files
+      document.getElementById('viewUploadedFilesList').innerHTML = '<div class="loading-files">Loading files...</div>';
 
+      // Load record data and files via AJAX
+      Promise.all([
+          fetchRecordData(recordId),
+          fetchRecordFiles(recordId)
+      ])
+      .then(([record, files]) => {
+          populateViewRecordModal(record);
+          displayViewRecordFiles(files);
+      })
+      .catch(error => {
+          console.error('Error loading record for view:', error);
           document.getElementById('viewRecordTitle').textContent = 'Error Loading Record';
           document.getElementById('viewOfficeDepartment').textContent = 'N/A';
           document.getElementById('viewRecordSeries').textContent = 'N/A';
@@ -1233,9 +1484,10 @@ try {
           document.getElementById('viewStatus').textContent = 'N/A';
           document.getElementById('viewClassification').textContent = 'N/A';
           document.getElementById('viewDescription').textContent = 'Error: ' + error.message;
+          document.getElementById('viewUploadedFilesList').innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">Error loading files.</div>';
 
           showToast('Error loading record data: ' + error.message, true);
-        });
+      });
     }
 
     function populateViewRecordModal(record) {
@@ -1285,9 +1537,12 @@ try {
       const classId = document.getElementById('classification').value;
       const retentionPeriod = document.getElementById('retentionPeriod').value.trim();
       const startDate = document.getElementById('inclusiveDateFrom').value;
-
+      const disposition = document.getElementById('disposition').value;
+      
       let isValid = true;
       let errorMessage = '';
+
+      console.log('Form validation - Disposition value:', disposition);
 
       if (!recordTitle) {
         errorMessage = 'Please enter a record title';
@@ -1307,6 +1562,9 @@ try {
       } else if (!startDate) {
         errorMessage = 'Please select a start date';
         isValid = false;
+      } else if (!disposition) {
+        errorMessage = 'Disposition type is required. Please select a valid classification.';
+        isValid = false;
       }
 
       if (!isValid) {
@@ -1316,6 +1574,7 @@ try {
         else if (!recordSeries) document.getElementById('recordSeries').focus();
         else if (!classId) document.getElementById('classification').focus();
         else if (!startDate) document.getElementById('inclusiveDateFrom').focus();
+        else if (!disposition) document.getElementById('disposition').focus();
       }
 
       return isValid;
@@ -1345,48 +1604,18 @@ try {
         formData.append('status', 'Active');
       }
 
-      console.log('Form data being submitted:');
-      for (let [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          console.log(key + ': ' + value.name + ' (' + value.size + ' bytes)');
-        } else {
-          console.log(key + ': ' + value);
-        }
-      }
-
       saveRecordBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (isEdit ? 'UPDATING...' : 'SAVING...');
       saveRecordBtn.disabled = true;
 
       const actionUrl = this.action;
-      console.log('Submitting to:', actionUrl);
 
       fetch(actionUrl, {
         method: 'POST',
         body: formData,
         credentials: 'same-origin'
       })
-        .then(response => {
-          console.log('Response status:', response.status);
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          return response.text().then(text => {
-            console.log('Raw response text:', text);
-            try {
-              return JSON.parse(text);
-            } catch (e) {
-              console.error('JSON parse error:', e);
-              const errorMatch = text.match(/Error: ([^<]+)/) || text.match(/Exception: ([^<]+)/);
-              if (errorMatch) {
-                throw new Error(errorMatch[1]);
-              }
-              throw new Error('Invalid JSON response from server');
-            }
-          });
-        })
+        .then(response => response.json())
         .then(data => {
-          console.log('Parsed response data:', data);
           if (data.success) {
             showToast(data.message);
             setTimeout(() => {
@@ -1395,7 +1624,6 @@ try {
             }, 1500);
           } else {
             showToast('Error: ' + (data.message || 'Unknown error'), true);
-            console.error('Server error:', data.message);
           }
         })
         .catch(error => {
@@ -1410,7 +1638,9 @@ try {
 
     // --- Global Event Listeners ---
     recordFormModal.addEventListener('click', (event) => {
-      if (event.target === recordFormModal) {
+      const isSelect2Click = event.target.closest('.select2-container') !== null;
+
+      if (event.target === recordFormModal && !isSelect2Click) {
         hideRecordFormModal();
       }
     });

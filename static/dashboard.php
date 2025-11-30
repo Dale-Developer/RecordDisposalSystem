@@ -22,6 +22,7 @@ if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -94,18 +95,38 @@ if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
           <h2 class="section-title">RECORDS DUE FOR ARCHIVE</h2>
           <div class="table-container">
             <table>
+              <thead>
+                <tr>
+                  <th>Record Details</th>
+                  <th>Due Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
               <tbody>
                 <?php if (empty($due_records)): ?>
                   <tr>
-                    <td colspan="3" style="text-align: center; color: #666;">No records due for archiving in the next 30
-                      days</td>
+                    <td colspan="3" style="text-align: center; color: #666;">
+                      No records due for archiving tomorrow
+                    </td>
                   </tr>
                 <?php else: ?>
                   <?php foreach ($due_records as $record): ?>
                     <tr>
-                      <td><?php echo htmlspecialchars($record['record_title'] . ' - ' . $record['office_name']); ?></td>
+                      <td>
+                        <strong><?php echo htmlspecialchars($record['record_title']); ?></strong><br>
+                        <small style="color: #666;"><?php echo htmlspecialchars($record['office_name']); ?></small>
+                        <?php if (!empty($record['files'])): ?>
+                          <div style="margin-top: 5px;">
+                            <small style="color: #888;">
+                              <i class="fas fa-paperclip"></i>
+                              <?php echo count($record['files']); ?> file(s) attached
+                            </small>
+                          </div>
+                        <?php endif; ?>
+                      </td>
                       <td><?php echo date('m/d/Y', strtotime($record['due_date'])); ?></td>
-                      <td style="color: var(--teal); font-weight: 600;"><?php echo htmlspecialchars($record['action']); ?>
+                      <td style="color: var(--orange); font-weight: 600;">
+                        <?php echo htmlspecialchars($record['action']); ?>
                       </td>
                     </tr>
                   <?php endforeach; ?>
