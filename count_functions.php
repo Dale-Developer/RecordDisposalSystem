@@ -209,10 +209,10 @@ function getRecentArchiveRequests($pdo)
         foreach ($grouped_results as $row) {
             if ($table_exists) {
                 $request_code = 'AR-' . str_pad($row['request_id'], 3, '0', STR_PAD_LEFT);
-                $status_badge = $row['status'] == 'Pending' ? ' <span style="color: orange;">(Pending)</span>' : '';
+                $status_badge = $row['status'] == 'Pending' ? /*' <span style="color: orange;">(Pending)</span>'*/ : '';
             } else {
                 $request_code = 'AR-' . str_pad($row['record_id'], 3, '0', STR_PAD_LEFT);
-                $status_badge = ' <span style="color: gray;">(Auto)</span>';
+                // $status_badge = ' <span style="color: gray;">(Auto)</span>';
             }
             
             $requests[] = [

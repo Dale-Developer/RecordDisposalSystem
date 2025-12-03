@@ -26,10 +26,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
       <h1>LSPU RECORDS</h1>
     </div>
 
-    <div class="search-container">
+    <!-- <div class="search-container">
       <i class="bx bx-search"></i>
       <input type="text" placeholder="Search.." />
-    </div>
+    </div> -->
     <!-- <div class="icon-nav">
       <ul>
         <li>
@@ -50,6 +50,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
       </ul>
     </div> -->
     <div class="profile-nav">
+      
+    <div class="search-container">
+      <i class="bx bx-search"></i>
+      <input type="text" placeholder="Search.." />
+    </div>
       <a class="profile-icon" href="#">
         <i class="bx bx-user-circle"></i>
         <span><?php echo htmlspecialchars($first_name); ?></span>
