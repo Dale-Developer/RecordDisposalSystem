@@ -2,6 +2,49 @@
 require_once '../session.php';
 require_once '../db_connect.php';
 
+// ========== AUTO-UPDATE EXPIRED RECORDS ==========
+// This runs EVERY TIME the page loads - SIMPLEST & FASTEST
+$current_date = date('Y-m-d');
+
+try {
+    // Update records past period_to to Archived
+    $update_archive_sql = "UPDATE records 
+                           SET status = 'Archived' 
+                           WHERE status IN ('Active', 'Inactive') 
+                           AND period_to IS NOT NULL 
+                           AND period_to < :current_date";
+    
+    $update_stmt = $pdo->prepare($update_archive_sql);
+    $update_stmt->execute(['current_date' => $current_date]);
+    $archived_count = $update_stmt->rowCount();
+    
+    // Optional: Update records past total retention to Scheduled for Disposal
+    // Comment out if you only want to archive based on period_to
+    $update_disposal_sql = "UPDATE records 
+                            SET status = 'Scheduled for Disposal' 
+                            WHERE status IN ('Active', 'Inactive')
+                            AND total_years > 0
+                            AND period_from IS NOT NULL
+                            AND DATE_ADD(period_from, INTERVAL total_years YEAR) < :current_date";
+    
+    $update_disposal_stmt = $pdo->prepare($update_disposal_sql);
+    $update_disposal_stmt->execute(['current_date' => $current_date]);
+    $disposal_count = $update_disposal_stmt->rowCount();
+    
+    $total_updated = $archived_count + $disposal_count;
+    
+    // Store in session to show notification (optional)
+    if ($total_updated > 0) {
+        $_SESSION['records_updated'] = $total_updated;
+        $_SESSION['update_time'] = date('H:i:s');
+    }
+    
+} catch (Exception $e) {
+    // Silently fail - don't break the page if update fails
+    error_log("Auto-update error: " . $e->getMessage());
+}
+// ========== END AUTO-UPDATE ==========
+
 // Initialize variables
 $records = [];
 $classifications = [];
@@ -13,50 +56,75 @@ if (!isset($pdo)) {
 }
 
 try {
+  // First, let's check what columns exist in record_classification table
+  $checkColumns = $pdo->query("DESCRIBE record_classification")->fetchAll(PDO::FETCH_ASSOC);
+  $columnNames = array_column($checkColumns, 'Field');
+
+  // Build dynamic SELECT based on available columns
+  $selectFields = [
+    'class_id',
+    'class_name',
+    'description',
+    'functional_category',
+    'retention_period',
+    'disposition_action',
+    'nap_authority'
+  ];
+
+  // Check if permanent_indicator column exists
+  if (in_array('permanent_indicator', $columnNames)) {
+    $selectFields[] = 'permanent_indicator';
+  }
+
   // Fetch records from database
   $sql = "SELECT 
-                r.record_id,
-                r.record_series_code,
-                r.record_title,
-                o.office_name,
-                r.inclusive_date_from,
-                r.inclusive_date_to,
-                r.retention_period,
-                r.disposition_type,
-                r.status,
-                rc.class_name,
-                rc.functional_category,
-                u.first_name,
-                u.last_name
-            FROM records r
-            LEFT JOIN offices o ON r.office_id = o.office_id
-            LEFT JOIN record_classification rc ON r.class_id = rc.class_id
-            LEFT JOIN users u ON r.created_by = u.user_id
-            ORDER BY r.record_id DESC";
+            r.record_id,
+            r.record_series_code,
+            r.record_series_title,
+            o.office_name,
+            r.period_from,
+            r.period_to,
+            r.active_years,
+            r.storage_years,
+            r.total_years,
+            r.disposition_type,
+            r.status,
+            r.time_value,
+            rc.class_name,
+            rc.functional_category,
+            u.first_name,
+            u.last_name
+          FROM records r
+          LEFT JOIN offices o ON r.office_id = o.office_id
+          LEFT JOIN record_classification rc ON r.class_id = rc.class_id
+          LEFT JOIN users u ON r.created_by = u.user_id
+          ORDER BY r.record_id DESC";
 
   $stmt = $pdo->query($sql);
   $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-  // Fetch NAP classifications with retention periods
-  $classifications = $pdo->query("
-        SELECT 
-            class_id,
-            class_name,
-            description,
-            functional_category,
-            retention_period,
-            disposition_action,
-            nap_authority
-        FROM record_classification 
-        ORDER BY functional_category, class_name
-    ")->fetchAll(PDO::FETCH_ASSOC);
+  // Fetch record classifications - use dynamic field selection
+  $selectQuery = "SELECT " . implode(', ', $selectFields) . " FROM record_classification ORDER BY functional_category, class_name";
+
+  $classifications = $pdo->query($selectQuery)->fetchAll(PDO::FETCH_ASSOC);
 
   // Fetch offices
   $offices = $pdo->query("SELECT * FROM offices ORDER BY office_name")->fetchAll(PDO::FETCH_ASSOC);
-
 } catch (PDOException $e) {
   error_log("Database error: " . $e->getMessage());
+  error_log("Error trace: " . $e->getTraceAsString());
   die("Database error occurred. Please check the error logs.");
+}
+
+// Check for update notification
+$show_update_notification = false;
+$update_message = '';
+if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
+    $show_update_notification = true;
+    $update_message = "Updated " . $_SESSION['records_updated'] . " expired records to 'Archived' status at " . $_SESSION['update_time'];
+    // Clear the notification after showing
+    unset($_SESSION['records_updated']);
+    unset($_SESSION['update_time']);
 }
 ?>
 <!DOCTYPE html>
@@ -67,14 +135,12 @@ try {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/x-icon" href="../imgs/fav.png">
   <link rel="stylesheet" href="../styles/record_management.css">
-  <!-- Add Select2 CSS for searchable dropdown -->
   <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-  <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <title>Record Management</title>
   <style>
-    /* Additional styles for Select2 */
+    /* Keep all your existing CSS styles */
     .select2-container--default .select2-selection--single {
       border: 1px solid #cfd8dc;
       border-radius: 8px;
@@ -91,7 +157,6 @@ try {
       height: 46px;
     }
 
-    /* FIX FOR TABLE TEXT TRUNCATION - ADD THIS */
     .table-wrapper {
       overflow-x: auto;
     }
@@ -99,7 +164,6 @@ try {
     table {
       width: 100%;
       table-layout: auto !important;
-      /* Allow columns to expand based on content */
     }
 
     td {
@@ -111,25 +175,15 @@ try {
       word-break: break-word !important;
     }
 
-    /* Remove all truncation from specific columns */
     td:nth-child(1),
-    /* RECORD SERIES CODE */
     td:nth-child(2),
-    /* RECORD TITLE */
     td:nth-child(3),
-    /* DEPARTMENT */
     td:nth-child(4),
-    /* INCLUSIVE DATE */
     td:nth-child(5),
-    /* RETENTION */
     td:nth-child(6),
-    /* DISPOSITION */
     td:nth-child(7),
-    /* STATUS */
-    td:nth-child(8)
-
-    /* ACTION */
-      {
+    td:nth-child(8),
+    td:nth-child(9) {
       white-space: normal !important;
       overflow: visible !important;
       text-overflow: unset !important;
@@ -138,10 +192,8 @@ try {
       word-break: break-word !important;
     }
 
-    /* CENTER THE RECORD TITLE COLUMN */
     th:nth-child(2),
     td:nth-child(2) {
-      /* RECORD TITLE */
       text-align: center !important;
     }
 
@@ -202,7 +254,6 @@ try {
       justify-content: center;
     }
 
-    /* Enhanced file upload styles */
     .upload-area.drag-over {
       border-color: #1f366c;
       background-color: #f0f4ff;
@@ -257,59 +308,160 @@ try {
       font-weight: 500;
     }
 
-    /* Loading spinner */
     .button-action:disabled {
       opacity: 0.7;
       cursor: not-allowed;
     }
 
-    /* Filter button active state */
     .filter-button.active {
       background: #1f366c !important;
       color: white !important;
     }
 
-    /* Ensure table rows can be hidden */
     #recordsTableBody tr {
       transition: all 0.3s ease;
     }
 
-    /* File actions styles */
-    .file-actions {
+    .retention-display {
       display: flex;
-      gap: 8px;
-      align-items: center;
+      flex-direction: column;
+      gap: 4px;
     }
 
-    .view-file-btn, .download-file-btn {
+    .retention-line {
+      font-size: 0.85em;
+    }
+
+    .retention-total {
+      font-weight: bold;
+      color: #1f366c;
+    }
+
+    .form-section-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1f366c;
+      margin: 25px 0 15px 0;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .medium-checkboxes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-top: 10px;
+    }
+
+    .medium-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .medium-option input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 20px;
+      margin-top: 10px;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .radio-option input[type="radio"] {
+      width: 18px;
+      height: 18px;
+    }
+
+    .volume-input {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .volume-input input {
+      flex: 1;
+    }
+
+    .volume-unit {
+      min-width: 100px;
+      height: 20px;
+    }
+
+    .time-value-badge {
+      background: #e8f5e9;
+      color: #2e7d32;
       padding: 4px 8px;
       border-radius: 4px;
-      text-decoration: none;
+      font-size: 0.8em;
+      font-weight: bold;
+      display: inline-block;
+    }
+
+    .time-value-badge.permanent {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+
+    .time-value-badge.temporary {
+      background: #fff3e0;
+      color: #ef6c00;
+    }
+
+    /* Style for editable storage years field */
+    /* Add to your existing CSS */
+    #activeYears {
+      background-color: #f8f9fa !important;
+      cursor: not-allowed !important;
+      color: #6c757d !important;
+    }
+
+    #storageYears {
+      background-color: white !important;
+      border: 2px solid #1f366c !important;
+      cursor: text !important;
+    }
+
+    #storageYears:focus {
+      border-color: #4caf50 !important;
+      box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1) !important;
+    }
+
+    /* Tooltip style for clarification */
+    .field-hint {
       font-size: 12px;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-
-    .view-file-btn {
-      background: #4CAF50;
-      color: white;
-    }
-
-    .download-file-btn {
-      background: #2196F3;
-      color: white;
-    }
-
-    .view-file-btn:hover, .download-file-btn:hover {
-      opacity: 0.8;
-      transform: translateY(-1px);
-    }
-
-    .file-tag {
-      font-size: 12px;
-      color: #666;
+      color: #78909c;
       margin-top: 4px;
       font-style: italic;
+    }
+
+    /* Fix for modal display */
+    .modal-backdrop.show {
+      display: flex !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
+
+    .modal-backdrop {
+      display: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    /* Make total years field readonly */
+    #totalYears {
+      background-color: #f8f9fa !important;
+      cursor: not-allowed !important;
+      color: #6c757d !important;
     }
   </style>
 </head>
@@ -319,39 +471,24 @@ try {
     <?php include 'sidebar.php'; ?>
   </nav>
   <main>
-    <!-- Main Content Container (Dashboard Card) -->
     <header class="header">
       <div class="header-title-block">
         <h1>RECORDS MANAGEMENT</h1>
       </div>
 
       <div class="actions">
-
-        <!-- Filter Button -->
         <button class="button filter-button" onclick="showFilterModal()">
           Filter
           <i class='bx bx-filter'></i>
         </button>
 
-        <!-- Primary Button (Add New Record) -->
-        <button class="button primary-action-btn" onclick="openRecordModal('add')">
-          <!-- <i class='bx bx-edit'></i> -->
+        <button class="button primary-action-btn" id="addRecordBtn">
           <i class='bx bxs-folder-plus'></i>
           Add New Record
         </button>
-
-        <!-- Edit/Pencil Button -->
-        <!-- <button class="button icon-button" onclick="console.log('Bulk edit mode toggled')">
-          <i class='bx bx-edit'></i>
-        </button> -->
-
       </div>
     </header>
     <div class="card dashboard-card">
-
-      <!-- Header and Action Bar -->
-
-      <!-- Responsive Table Container -->
       <div class="table-wrapper">
         <table>
           <thead>
@@ -360,7 +497,8 @@ try {
               <th>RECORD TITLE</th>
               <th>DEPARTMENT</th>
               <th>INCLUSIVE DATE</th>
-              <th>RETENTION</th>
+              <th>RETENTION PERIOD</th>
+              <th>TIME VALUE</th>
               <th>DISPOSITION</th>
               <th>STATUS</th>
               <th>ACTION</th>
@@ -369,7 +507,7 @@ try {
           <tbody id="recordsTableBody">
             <?php if (empty($records)): ?>
               <tr>
-                <td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">
+                <td colspan="9" style="text-align: center; padding: 2rem; color: #78909c;">
                   No records found. Click "Add New Record" to create one.
                 </td>
               </tr>
@@ -378,15 +516,34 @@ try {
                 <tr data-record-id="<?= $record['record_id'] ?>"
                   data-office-name="<?= htmlspecialchars($record['office_name']) ?>">
                   <td><?= htmlspecialchars($record['record_series_code'] ?? 'N/A') ?></td>
-                  <td><?= htmlspecialchars($record['record_title']) ?></td>
+                  <td><?= htmlspecialchars($record['record_series_title']) ?></td>
                   <td><?= htmlspecialchars($record['office_name']) ?></td>
                   <td>
-                    <?= $record['inclusive_date_from'] ? date('m/d/Y', strtotime($record['inclusive_date_from'])) : 'N/A' ?>
+                    <?= $record['period_from'] ? date('m/d/Y', strtotime($record['period_from'])) : 'N/A' ?>
                     -
-                    <?= $record['inclusive_date_to'] ? date('m/d/Y', strtotime($record['inclusive_date_to'])) : 'N/A' ?>
+                    <?= $record['period_to'] ? date('m/d/Y', strtotime($record['period_to'])) : 'N/A' ?>
                   </td>
                   <td>
-                    <span class="retention-badge"><?= htmlspecialchars($record['retention_period']) ?></span>
+                    <div class="retention-display">
+                      <?php if ($record['active_years']): ?>
+                        <div class="retention-line">Active: <?= $record['active_years'] ?> years</div>
+                      <?php endif; ?>
+                      <?php if ($record['storage_years']): ?>
+                        <div class="retention-line">Storage: <?= $record['storage_years'] ?> years</div>
+                      <?php endif; ?>
+                      <?php if ($record['total_years']): ?>
+                        <div class="retention-line retention-total">Total: <?= $record['total_years'] ?> years</div>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                  <td>
+                    <?php if ($record['time_value']): ?>
+                      <span class="time-value-badge <?= strtolower($record['time_value']) ?>">
+                        <?= htmlspecialchars($record['time_value']) ?>
+                      </span>
+                    <?php else: ?>
+                      N/A
+                    <?php endif; ?>
                   </td>
                   <td><?= htmlspecialchars($record['disposition_type']) ?></td>
                   <td>
@@ -416,14 +573,12 @@ try {
           <h2>FILTER RECORDS</h2>
         </div>
 
-        <!-- Basic Filter Row -->
         <div class="basic-filter-row">
           <div class="search-input-wrapper">
             <input type="text" id="searchInput" placeholder="Type in file name or name">
             <i class="fas fa-search search-icon"></i>
           </div>
 
-          <!-- Department Dropdown -->
           <div class="department-dropdown select-wrapper">
             <select id="departmentSelect">
               <option value="">Department</option>
@@ -436,13 +591,11 @@ try {
           <button class="filter-apply-btn" onclick="applyFilters()">APPLY</button>
         </div>
 
-        <!-- Advance Filter Toggle -->
         <a href="#" class="advance-filter-toggle" id="filterToggle" onclick="toggleAdvancedFilters(event)"
           aria-expanded="false">
           Show Advance Filter <i class="fas fa-caret-down"></i>
         </a>
 
-        <!-- Advanced Filters Row -->
         <div id="advancedFiltersRow" class="advanced-filters-row">
           <div class="filter-select-group select-wrapper">
             <select id="classificationSelect">
@@ -471,24 +624,20 @@ try {
             </select>
           </div>
           <div class="filter-select-group select-wrapper">
-            <select id="retentionSelect">
-              <option value="">Retention Period</option>
-              <?php
-              $retentionOptions = ['1 Year', '2 Years', '3 Years', '4 Years', '5 Years', '6 Years', '7 Years', '8 Years', '9 Years', '10 Years', '11 Years', '12 Years', '13 Years', '14 Years', '15 Years', 'Permanent'];
-              foreach ($retentionOptions as $option): ?>
-                <option value="<?= htmlspecialchars($option) ?>"><?= htmlspecialchars($option) ?></option>
-              <?php endforeach; ?>
+            <select id="timeValueSelect">
+              <option value="">Time Value</option>
+              <option value="Permanent">Permanent</option>
+              <option value="Temporary">Temporary</option>
             </select>
           </div>
           <div class="filter-select-group">
-            <input type="date" id="dateFromInput" placeholder="Inclusive Date (From)">
+            <input type="date" id="dateFromInput" placeholder="Period From">
           </div>
           <div class="filter-select-group">
-            <input type="date" id="dateToInput" placeholder="Inclusive Date (To)">
+            <input type="date" id="dateToInput" placeholder="Period To">
           </div>
         </div>
 
-        <!-- Clear Filter Link -->
         <a href="#" class="clear-filter-link" onclick="clearFilters()">Clear Filter</a>
       </div>
     </div>
@@ -502,11 +651,11 @@ try {
         <form id="recordForm" method="POST" action="../process_record.php" enctype="multipart/form-data">
           <input type="hidden" id="recordId" name="record_id" value="">
 
-          <!-- Top Section: Record Information Inputs -->
+          <!-- Basic Record Information -->
           <div class="form-fields-grid">
             <div class="form-group full-width">
-              <label for="recordTitle">Record Title:</label>
-              <input type="text" id="recordTitle" name="record_title" placeholder="Enter record title" required>
+              <label for="recordSeriesTitle">Record Title:</label>
+              <input type="text" id="recordSeriesTitle" name="record_series_title" placeholder="Enter record title" required>
             </div>
 
             <div class="form-group select-wrapper">
@@ -524,8 +673,8 @@ try {
             </div>
 
             <div class="form-group">
-              <label for="recordSeries">Record Series Code:</label>
-              <input type="text" id="recordSeries" name="record_series_code"
+              <label for="recordSeriesCode">Record Series Code:</label>
+              <input type="text" id="recordSeriesCode" name="record_series_code"
                 placeholder="Enter series code (e.g., HR-FSR-001)" required>
             </div>
 
@@ -540,7 +689,8 @@ try {
                       data-retention="<?= htmlspecialchars($class['retention_period']) ?>"
                       data-disposition="<?= htmlspecialchars($class['disposition_action']) ?>"
                       data-category="<?= htmlspecialchars($class['functional_category']) ?>"
-                      data-authority="<?= htmlspecialchars($class['nap_authority']) ?>">
+                      data-authority="<?= htmlspecialchars($class['nap_authority']) ?>"
+                      data-permanent="<?= isset($class['permanent_indicator']) && $class['permanent_indicator'] ? 'yes' : 'no' ?>">
                       <?= htmlspecialchars($class['class_name']) ?>
                       (<?= htmlspecialchars($class['functional_category']) ?> -
                       <?= htmlspecialchars($class['retention_period']) ?>)
@@ -554,36 +704,132 @@ try {
                 <div><strong>Retention Period:</strong> <span id="infoRetention" class="retention-badge"></span></div>
                 <div><strong>Disposition Action:</strong> <span id="infoDisposition"></span></div>
                 <div><strong>Category:</strong> <span id="infoCategory"></span></div>
+                <div><strong>Time Value:</strong> <span id="infoTimeValue" class="time-value-badge"></span></div>
                 <div class="nap-details"><strong>NAP Authority:</strong> <span id="infoAuthority"></span></div>
               </div>
             </div>
 
             <div class="form-group">
-              <label for="inclusiveDate">Inclusive Dates:</label>
-              <div class="inclusive-date-group">
-                <input type="date" id="inclusiveDateFrom" name="inclusive_date_from" title="Start Date" required
-                  onchange="calculateEndDate()">
-                <input type="date" id="inclusiveDateTo" name="inclusive_date_to" title="End Date" readonly
-                  class="view-field">
+              <label for="periodFrom">Period From:</label>
+              <input type="date" id="periodFrom" name="period_from" title="Start Date" required>
+            </div>
+
+            <div class="form-group">
+              <label for="periodTo">Period To:</label>
+              <input type="date" id="periodTo" name="period_to" title="End Date" readonly class="view-field">
+            </div>
+
+            <!-- Retention Period Fields -->
+            <div class="form-group">
+              <label for="activeYears">Active Retention (years):</label>
+              <input type="number" id="activeYears" name="active_years" min="0" max="100" class="view-field" readonly>
+              <div class="field-hint">
+                <i class="fas fa-info-circle"></i>
+                Active retention is set automatically from classification.
+                Add storage years if applicable.
               </div>
             </div>
 
-            <!-- Auto-populated fields based on classification -->
             <div class="form-group">
-              <label for="retentionPeriod">Retention Period:</label>
-              <input type="text" id="retentionPeriod" name="retention_period" readonly class="view-field">
-              <input type="hidden" id="retentionYears" name="retention_years">
+              <label for="storageYears">Storage Retention (years):</label>
+              <input type="number" id="storageYears" name="storage_years" min="0" max="100" placeholder="Enter storage years"
+                style="background-color: white; border: 1px solid #cfd8dc;">
+            </div>
+
+            <div class="form-group">
+              <label for="totalYears">Total Retention (years):</label>
+              <input type="number" id="totalYears" name="total_years" min="0" max="200" class="view-field" readonly>
             </div>
 
             <div class="form-group">
               <label for="disposition">Disposition Type:</label>
-              <select id="disposition" name="disposition_type" class="view-field" style="background-color: #f8f9fa;"
-                readonly>
+              <select id="disposition" name="disposition_type" class="view-field" style="background-color: #f8f9fa;" readonly>
                 <option value="">Select Disposition Type...</option>
                 <option value="Archive">Archive</option>
                 <option value="Dispose">Dispose</option>
                 <option value="Active">Active</option>
                 <option value="Permanent">Permanent</option>
+                <option value="Review">Review</option>
+                <option value="Transfer">Transfer</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Record Details Section -->
+          <h2 class="form-section-title">Record Details</h2>
+
+          <div class="form-fields-grid">
+            <div class="form-group">
+              <label for="volume">Volume (in cubic meters):</label>
+              <input type="number" id="volume" name="volume" step="0.01" min="0" placeholder="0.00" style="width: 100%;">
+            </div>
+
+            <div class="form-group">
+              <label>Records Medium:</label>
+              <div class="medium-checkboxes">
+                <label class="medium-option">
+                  <input type="checkbox" name="records_medium[]" value="Paper"> Paper
+                </label>
+                <label class="medium-option">
+                  <input type="checkbox" name="records_medium[]" value="Electronic Files"> Electronic Files
+                </label>
+                <label class="medium-option">
+                  <input type="checkbox" name="records_medium[]" value="Computer Printouts"> Computer Printouts
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Access Restrictions:</label>
+              <div class="radio-group">
+                <label class="radio-option">
+                  <input type="radio" name="restrictions" value="Open Access" checked> Open Access
+                </label>
+                <label class="radio-option">
+                  <input type="radio" name="restrictions" value="Restricted Access"> Restricted
+                </label>
+                <label class="radio-option">
+                  <input type="radio" name="restrictions" value="Confidential"> Confidential
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="location">Location of Records:</label>
+              <input type="text" id="location" name="location_of_records" placeholder="Physical or digital location">
+            </div>
+
+            <div class="form-group">
+              <label for="frequency">Frequency of Use:</label>
+              <select id="frequency" name="frequency_of_use">
+                <option value="">Select frequency...</option>
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Quarterly">Quarterly</option>
+                <option value="Annually">Annually</option>
+                <option value="Rarely">Rarely</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="duplication">Duplication:</label>
+              <input type="text" id="duplication" name="duplication" placeholder="Duplication information">
+            </div>
+
+            <div class="form-group">
+              <label for="timeValue">Time Value:</label>
+              <input type="text" id="timeValue" name="time_value" class="view-field" readonly>
+            </div>
+
+            <div class="form-group">
+              <label for="utilityValue">Utility Value:</label>
+              <select id="utilityValue" name="utility_value">
+                <option value="">Select value...</option>
+                <option value="Administrative">Administrative</option>
+                <option value="Fiscal">Fiscal</option>
+                <option value="Legal">Legal</option>
+                <option value="Archival">Archival</option>
               </select>
             </div>
           </div>
@@ -596,7 +842,7 @@ try {
             <button type="button" class="browse-btn" onclick="document.getElementById('fileUpload').click();">Browse
               Files</button>
             <input type="file" id="fileUpload" name="attachments[]" multiple style="display: none;"
-              onchange="handleFileSelect(this.files)" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif">
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif">
           </div>
 
           <!-- UPLOADED FILES LIST -->
@@ -615,6 +861,13 @@ try {
               placeholder="Add detailed notes or contextual information about the record series..."></textarea>
           </div>
 
+          <!-- Disposition Provision -->
+          <div class="form-group full-width" style="margin-top: 20px;">
+            <label for="dispositionProvision">Disposition Instructions:</label>
+            <textarea id="dispositionProvision" name="disposition_provision" class="description-textarea" rows="3"
+              placeholder="Specific disposition instructions..."></textarea>
+          </div>
+
           <!-- Bottom Action Buttons -->
           <div class="action-buttons">
             <button type="button" class="button-action cancel" onclick="hideRecordFormModal()">CANCEL</button>
@@ -626,13 +879,13 @@ try {
       </div>
     </div>
 
-    <!-- VIEW RECORD MODAL (For Double Click) -->
+    <!-- VIEW RECORD MODAL -->
     <div id="viewRecordModal" class="modal-backdrop">
       <div class="modal-card record-form-card">
         <button class="modal-close-btn" onclick="hideViewRecordModal()">&times;</button>
         <h1 class="form-title" id="viewRecordModalTitle">VIEW RECORD</h1>
 
-        <!-- Top Section: Record Information Display -->
+        <!-- Record Information Display -->
         <div class="form-fields-grid">
           <div class="form-group full-width">
             <label>Record Title:</label>
@@ -655,8 +908,8 @@ try {
           </div>
 
           <div class="form-group">
-            <label>Inclusive Date:</label>
-            <div class="view-field" id="viewInclusiveDate"></div>
+            <label>Period Covered:</label>
+            <div class="view-field" id="viewPeriodCovered"></div>
           </div>
 
           <div class="form-group">
@@ -670,8 +923,46 @@ try {
           </div>
 
           <div class="form-group">
+            <label>Time Value:</label>
+            <div class="view-field" id="viewTimeValue"></div>
+          </div>
+
+          <div class="form-group">
             <label>Status:</label>
             <div class="view-field" id="viewStatus"></div>
+          </div>
+        </div>
+
+        <!-- Additional Details -->
+        <div class="form-fields-grid" style="margin-top: 20px;">
+          <div class="form-group">
+            <label>Volume:</label>
+            <div class="view-field" id="viewVolume"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Medium:</label>
+            <div class="view-field" id="viewMedium"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Restrictions:</label>
+            <div class="view-field" id="viewRestrictions"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Location:</label>
+            <div class="view-field" id="viewLocation"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Frequency of Use:</label>
+            <div class="view-field" id="viewFrequency"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Utility Value:</label>
+            <div class="view-field" id="viewUtilityValue"></div>
           </div>
         </div>
 
@@ -679,6 +970,12 @@ try {
         <div class="form-group full-width" style="margin-top: 20px;">
           <label>Detailed Description / Notes:</label>
           <div class="view-field view-description" id="viewDescription"></div>
+        </div>
+
+        <!-- Disposition Instructions -->
+        <div class="form-group full-width" style="margin-top: 20px;">
+          <label>Disposition Instructions:</label>
+          <div class="view-field view-description" id="viewDispositionProvision"></div>
         </div>
 
         <!-- Files Section -->
@@ -690,6 +987,7 @@ try {
             </div>
           </div>
         </div>
+
         <!-- Close Button -->
         <div class="action-buttons">
           <button class="button-action cancel" onclick="hideViewRecordModal()">CLOSE</button>
@@ -697,11 +995,14 @@ try {
       </div>
     </div>
   </main>
+
   <!-- Success Toast -->
   <div id="successToast" class="success-toast"></div>
 
   <!-- Add Select2 JS -->
   <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+  <!-- COMPLETE JAVASCRIPT CODE WITH FIXED VALIDATION -->
   <script>
     // --- Element References ---
     const recordFormModal = document.getElementById('recordModal');
@@ -721,77 +1022,228 @@ try {
 
     let selectedFiles = [];
     let select2Initialized = false;
-    let removedFiles = []; // Track files marked for deletion
+    let removedFiles = [];
 
-    // --- AJAX Functions for Data Retrieval ---
-    function fetchRecordFiles(recordId) {
-        console.log('📁 Fetching files for record:', recordId);
-        return fetch(`../get_record_files.php?id=${recordId}`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    console.log(`✅ Successfully loaded ${data.files ? data.files.length : 0} files`);
-                    return data.files || [];
-                } else {
-                    throw new Error(data.message || 'Failed to load files');
-                }
-            })
-            .catch(error => {
-                console.error('❌ Error fetching files:', error);
-                return [];
-            });
+    // --- Parse Retention Period from Classification ---
+    function parseRetentionPeriod(retentionPeriod) {
+      if (!retentionPeriod) return {
+        active: 0,
+        storage: 0,
+        total: 0,
+        permanent: false
+      };
+
+      // Handle "Permanent" or "permanent" cases
+      const lowerRetention = retentionPeriod.toLowerCase();
+      if (lowerRetention.includes('permanent')) {
+        return {
+          active: 0,
+          storage: 0,
+          total: 0,
+          permanent: true
+        };
+      }
+
+      // Initialize values
+      let active = 0;
+      let storage = 0;
+
+      // Convert to lowercase for easier matching
+      const text = retentionPeriod.toLowerCase();
+
+      console.log("Parsing retention period:", retentionPeriod);
+
+      // Try to match "X years active + Y years storage" pattern
+      const fullPattern = /(\d+)\s*years?\s*active\s*\+\s*(\d+)\s*years?\s*storage/i;
+      const fullMatch = text.match(fullPattern);
+
+      if (fullMatch) {
+        active = parseInt(fullMatch[1]);
+        storage = parseInt(fullMatch[2]);
+        console.log("Matched full pattern - Active:", active, "Storage:", storage);
+      } else {
+        // Try to match "X years active" (active only)
+        const activePattern = /(\d+)\s*years?\s*active/i;
+        const activeMatch = text.match(activePattern);
+
+        if (activeMatch) {
+          active = parseInt(activeMatch[1]);
+          console.log("Matched active only pattern - Active:", active);
+        }
+
+        // Try to match "X years storage" (storage only)
+        const storagePattern = /(\d+)\s*years?\s*storage/i;
+        const storageMatch = text.match(storagePattern);
+
+        if (storageMatch) {
+          storage = parseInt(storageMatch[1]);
+          console.log("Matched storage only pattern - Storage:", storage);
+        }
+
+        // If no "active" or "storage" keyword found, but contains "years"
+        if (active === 0 && storage === 0) {
+          const yearsPattern = /(\d+)\s*years?/i;
+          const yearsMatch = text.match(yearsPattern);
+
+          if (yearsMatch) {
+            // Assume it's all active if not specified
+            active = parseInt(yearsMatch[1]);
+            console.log("Matched years only pattern - Active:", active);
+          }
+        }
+      }
+
+      const total = active + storage;
+
+      console.log("Final result - Active:", active, "Storage:", storage, "Total:", total);
+
+      return {
+        active,
+        storage,
+        total,
+        permanent: false
+      };
     }
 
-    function fetchRecordData(recordId) {
-      console.log('🔄 Fetching record data for ID:', recordId);
+    // --- Date Calculation Function ---
+    function calculateEndDate() {
+      const startDate = document.getElementById('periodFrom').value;
+      const activeYears = parseInt(document.getElementById('activeYears').value) || 0;
 
-      return fetch(`../get_record.php?id=${recordId}`)
-        .then(response => {
-          console.log('📡 Response status:', response.status, response.statusText);
+      // Only add Active Retention to Period To (not Total Retention)
+      if (!startDate || activeYears === 0) {
+        document.getElementById('periodTo').value = '';
+        return;
+      }
 
-          if (response.status === 500) {
-            return response.text().then(errorText => {
-              console.error('❌ PHP 500 Error Detected');
-              let errorMessage = 'Server Error (500) - Check PHP configuration';
-              throw new Error(errorMessage);
-            });
-          }
+      const start = new Date(startDate);
+      const endDate = new Date(start);
+      endDate.setFullYear(start.getFullYear() + activeYears); // Only add active years
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
+      document.getElementById('periodTo').value = endDate.toISOString().split('T')[0];
+    }
 
-          return response.json();
-        })
-        .then(data => {
-          if (data.success && data.record) {
-            console.log('✅ Record data loaded successfully');
-            return data.record;
-          } else {
-            throw new Error(data.message || 'Failed to load record data');
-          }
-        })
-        .catch(error => {
-          console.error('❌ fetchRecordData error:', error);
-          throw error;
-        });
+    // --- Calculate Total Retention ---
+    function calculateTotalRetention() {
+      const activeYears = parseInt(document.getElementById('activeYears').value) || 0;
+      const storageYears = parseInt(document.getElementById('storageYears').value) || 0;
+      const totalYears = activeYears + storageYears;
+
+      document.getElementById('totalYears').value = totalYears;
+      
+      // Also recalculate end date when storage changes
+      calculateEndDate();
+    }
+
+    // --- Initialize Select2 with enhanced functionality ---
+    function initializeSelect2() {
+      if (!select2Initialized) {
+        try {
+          $('#classification').select2({
+            placeholder: 'Search and select classification...',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: $('#recordModal')
+          });
+
+          $('#classification').on('change', function() {
+            const selectedOption = $(this).find('option:selected');
+            const retentionText = selectedOption.data('retention');
+            const disposition = selectedOption.data('disposition');
+            const category = selectedOption.data('category');
+            const authority = selectedOption.data('authority');
+            const isPermanent = selectedOption.data('permanent') === 'yes';
+
+            if (retentionText) {
+              console.log("Selected retention text:", retentionText);
+
+              // Parse retention period
+              const retention = parseRetentionPeriod(retentionText);
+
+              // Update active retention (readonly, based on classification)
+              document.getElementById('activeYears').value = retention.active;
+
+              // Clear storage years for user input
+              document.getElementById('storageYears').value = '';
+              document.getElementById('storageYears').readOnly = false;
+              document.getElementById('storageYears').classList.remove('view-field');
+              document.getElementById('storageYears').style.backgroundColor = 'white';
+              document.getElementById('storageYears').placeholder = 'Enter storage years';
+
+              // Calculate total retention (will be 0 since storage is empty)
+              calculateTotalRetention();
+
+              // Recalculate end date based on active years
+              calculateEndDate();
+
+              // Update disposition
+              if (disposition) {
+                document.getElementById('disposition').value = disposition;
+              }
+
+              // Set Time Value based on permanent indicator
+              const timeValue = retention.permanent || isPermanent ? 'Permanent' : 'Temporary';
+              document.getElementById('timeValue').value = timeValue;
+
+              // Show classification info
+              $('#infoRetention').text(retentionText);
+              $('#infoDisposition').text(disposition || 'Not specified');
+              $('#infoCategory').text(category || 'Not specified');
+              $('#infoTimeValue').text(timeValue).removeClass('permanent temporary').addClass(timeValue.toLowerCase());
+              $('#infoAuthority').text(authority || 'Not specified');
+              $('#classificationInfo').addClass('show');
+
+              console.log("Set active years to:", retention.active);
+            } else {
+              document.getElementById('activeYears').value = '';
+              document.getElementById('storageYears').value = '';
+              document.getElementById('storageYears').readOnly = false;
+              document.getElementById('totalYears').value = '';
+              document.getElementById('disposition').value = '';
+              document.getElementById('timeValue').value = '';
+              document.getElementById('periodTo').value = '';
+              $('#classificationInfo').removeClass('show');
+            }
+          });
+
+          select2Initialized = true;
+        } catch (error) {
+          console.error('Select2 initialization error:', error);
+          $('#classification').show();
+        }
+      }
+    }
+
+    // --- Update the storage years field to recalculate when changed ---
+    function setupRetentionCalculation() {
+      const storageYearsInput = document.getElementById('storageYears');
+      if (storageYearsInput) {
+        storageYearsInput.addEventListener('input', calculateTotalRetention);
+        storageYearsInput.addEventListener('change', calculateTotalRetention);
+      }
+
+      const activeYearsInput = document.getElementById('activeYears');
+      if (activeYearsInput) {
+        activeYearsInput.addEventListener('input', calculateEndDate);
+        activeYearsInput.addEventListener('change', calculateEndDate);
+      }
+
+      const periodFromInput = document.getElementById('periodFrom');
+      if (periodFromInput) {
+        periodFromInput.addEventListener('change', calculateEndDate);
+      }
     }
 
     // --- File Management Functions ---
     function displayExistingFiles(files) {
-        console.log('🎯 Displaying existing files:', files);
-        if (!files || files.length === 0) {
-            uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
-            updateFileCount();
-            return;
-        }
+      console.log('Displaying existing files:', files);
+      if (!files || files.length === 0) {
+        uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
+        updateFileCount();
+        return;
+      }
 
-        const existingFilesHTML = files.map((file, index) => `
+      const existingFilesHTML = files.map((file, index) => `
             <div class="file-item existing-file" data-file-id="${file.file_id}">
                 <div class="file-info">
                     <div class="file-name">
@@ -809,69 +1261,61 @@ try {
             </div>
         `).join('');
 
-        uploadedFilesList.innerHTML = existingFilesHTML;
-        updateFileCount();
+      uploadedFilesList.innerHTML = existingFilesHTML;
+      updateFileCount();
     }
 
-    // --- FILE DELETION FUNCTION ---
     function removeExistingFile(fileId, fileName) {
-        if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
-            return;
-        }
+      if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
+        return;
+      }
 
-        console.log('🗑️ Removing existing file ID:', fileId);
-        
-        // Add to removed files array
-        if (!removedFiles.includes(fileId)) {
-            removedFiles.push(fileId);
-        }
+      console.log('Removing existing file ID:', fileId);
 
-        // Create hidden input for form submission
-        let removalInput = document.querySelector(`input[name="removed_files[]"][value="${fileId}"]`);
-        if (!removalInput) {
-            removalInput = document.createElement('input');
-            removalInput.type = 'hidden';
-            removalInput.name = 'removed_files[]';
-            removalInput.value = fileId;
-            recordForm.appendChild(removalInput);
-        }
-        
-        // Remove from UI immediately
-        const fileElement = document.querySelector(`.existing-file[data-file-id="${fileId}"]`);
-        if (fileElement) {
-            fileElement.style.opacity = '0.5';
-            fileElement.style.textDecoration = 'line-through';
-            fileElement.querySelector('.file-status').textContent = 'Marked for deletion';
-            fileElement.querySelector('.remove-file-btn').disabled = true;
-            
-            // Optional: Remove completely after a delay
-            setTimeout(() => {
-                fileElement.remove();
-                updateFileCount();
-            }, 1000);
-        }
-        
-        updateFileCount();
-        showToast(`File "${fileName}" marked for deletion`);
+      if (!removedFiles.includes(fileId)) {
+        removedFiles.push(fileId);
+      }
+
+      let removalInput = document.querySelector(`input[name="removed_files[]"][value="${fileId}"]`);
+      if (!removalInput) {
+        removalInput = document.createElement('input');
+        removalInput.type = 'hidden';
+        removalInput.name = 'removed_files[]';
+        removalInput.value = fileId;
+        recordForm.appendChild(removalInput);
+      }
+
+      const fileElement = document.querySelector(`.existing-file[data-file-id="${fileId}"]`);
+      if (fileElement) {
+        fileElement.style.opacity = '0.5';
+        fileElement.style.textDecoration = 'line-through';
+        fileElement.querySelector('.file-status').textContent = 'Marked for deletion';
+        fileElement.querySelector('.remove-file-btn').disabled = true;
+
+        setTimeout(() => {
+          fileElement.remove();
+          updateFileCount();
+        }, 1000);
+      }
+
+      updateFileCount();
+      showToast(`File "${fileName}" marked for deletion`);
     }
 
     function displayViewRecordFiles(files) {
-        console.log('👀 Displaying files in view modal:', files);
-        
-        const filesContainer = document.getElementById('viewUploadedFilesList');
-        const fileCountElement = document.getElementById('viewFileCount');
-        
-        if (!files || files.length === 0) {
-            filesContainer.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files attached to this record.</div>';
-            fileCountElement.textContent = '0';
-            return;
-        }
+      console.log('Displaying files in view modal:', files);
 
-        filesContainer.innerHTML = files.map(file => {
-            const viewUrl = `../view_file.php?id=${file.file_id}`;
-            const downloadUrl = `../download_file.php?id=${file.file_id}`;
-            
-            return `
+      const filesContainer = document.getElementById('viewUploadedFilesList');
+      const fileCountElement = document.getElementById('viewFileCount');
+
+      if (!files || files.length === 0) {
+        filesContainer.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files attached to this record.</div>';
+        fileCountElement.textContent = '0';
+        return;
+      }
+
+      filesContainer.innerHTML = files.map(file => {
+        return `
                 <div class="file-item">
                     <div class="file-info">
                         <div class="file-name">
@@ -880,23 +1324,22 @@ try {
                         <div class="file-size">${formatFileSize(file.file_size)}</div>
                         ${file.file_tag ? `<div class="file-tag">Tag: ${file.file_tag}</div>` : ''}
                     </div>
-                    
                 </div>
             `;
-        }).join('');
-        
-        fileCountElement.textContent = files.length;
+      }).join('');
+
+      fileCountElement.textContent = files.length;
     }
 
     function updateFileList() {
-        const existingFileElements = document.querySelectorAll('.existing-file');
-        const totalCount = existingFileElements.length + selectedFiles.length;
-        fileCount.textContent = totalCount;
+      const existingFileElements = document.querySelectorAll('.existing-file');
+      const totalCount = existingFileElements.length + selectedFiles.length;
+      fileCount.textContent = totalCount;
 
-        let newFilesHTML = '';
-        
-        if (selectedFiles.length > 0) {
-            newFilesHTML = selectedFiles.map((file, index) => `
+      let newFilesHTML = '';
+
+      if (selectedFiles.length > 0) {
+        newFilesHTML = selectedFiles.map((file, index) => `
                 <div class="file-item new-file" data-file-index="${index}">
                     <div class="file-info">
                         <div class="file-name">
@@ -911,244 +1354,34 @@ try {
                     </button>
                 </div>
             `).join('');
-        }
+      }
 
-        if (totalCount === 0) {
-            uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
-        } else {
-            const existingFilesHTML = Array.from(existingFileElements).map(el => el.outerHTML).join('');
-            uploadedFilesList.innerHTML = existingFilesHTML + newFilesHTML;
-        }
+      if (totalCount === 0) {
+        uploadedFilesList.innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">No files currently attached.</div>';
+      } else {
+        const existingFilesHTML = Array.from(existingFileElements).map(el => el.outerHTML).join('');
+        uploadedFilesList.innerHTML = existingFilesHTML + newFilesHTML;
+      }
     }
 
     function updateFileCount() {
-        const existingFileElements = document.querySelectorAll('.existing-file');
-        const totalCount = existingFileElements.length + selectedFiles.length;
-        fileCount.textContent = totalCount;
+      const existingFileElements = document.querySelectorAll('.existing-file');
+      const totalCount = existingFileElements.length + selectedFiles.length;
+      fileCount.textContent = totalCount;
     }
 
-    // --- Filter Functions ---
-    function applyFilters() {
-      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-      const department = document.getElementById('departmentSelect').value;
-      const classification = document.getElementById('classificationSelect').value;
-      const disposition = document.getElementById('dispositionSelect').value;
-      const status = document.getElementById('statusSelect').value;
-      const retention = document.getElementById('retentionSelect').value;
-      const dateFrom = document.getElementById('dateFromInput').value;
-      const dateTo = document.getElementById('dateToInput').value;
-
-      const rows = document.querySelectorAll('#recordsTableBody tr');
-      let visibleCount = 0;
-
-      rows.forEach(row => {
-        if (row.querySelector('td[colspan="8"]')) {
-          return;
-        }
-
-        let showRow = true;
-
-        if (searchTerm) {
-          const recordTitle = row.cells[1].textContent.toLowerCase();
-          const recordCode = row.cells[0].textContent.toLowerCase();
-          if (!recordTitle.includes(searchTerm) && !recordCode.includes(searchTerm)) {
-            showRow = false;
-          }
-        }
-
-        if (department && showRow) {
-          const officeName = row.getAttribute('data-office-name');
-          const departmentText = document.getElementById('departmentSelect').options[document.getElementById('departmentSelect').selectedIndex].text;
-          if (officeName !== departmentText) {
-            showRow = false;
-          }
-        }
-
-        if (status && showRow) {
-          const statusBadge = row.cells[6].querySelector('.badge');
-          if (statusBadge && statusBadge.textContent.toLowerCase() !== status) {
-            showRow = false;
-          }
-        }
-
-        if (retention && showRow) {
-          const retentionBadge = row.cells[4].querySelector('.retention-badge');
-          if (retentionBadge && retentionBadge.textContent !== retention) {
-            showRow = false;
-          }
-        }
-
-        if (disposition && showRow) {
-          const dispositionCell = row.cells[5].textContent;
-          if (dispositionCell !== disposition) {
-            showRow = false;
-          }
-        }
-
-        row.style.display = showRow ? '' : 'none';
-        if (showRow) visibleCount++;
-      });
-
-      const filterButton = document.querySelector('.filter-button');
-      const hasActiveFilters = searchTerm || department || classification || disposition || status || retention || dateFrom || dateTo;
-
-      if (hasActiveFilters) {
-        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-        filterButton.style.background = '#1f366c';
-        filterButton.style.color = 'white';
-      } else {
-        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-        filterButton.style.background = '';
-        filterButton.style.color = '';
-      }
-
-      const noRecordsRow = document.querySelector('#recordsTableBody tr td[colspan="8"]');
-      if (visibleCount === 0) {
-        if (!noRecordsRow) {
-          const tbody = document.getElementById('recordsTableBody');
-          tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">No records match your filters.</td></tr>`;
-        }
-      } else if (noRecordsRow && noRecordsRow.textContent.includes('match your filters')) {
-        location.reload();
-      }
-
-      hideFilterModal();
-      showToast('Filters applied successfully');
-    }
-
-    function clearFilters() {
-      document.getElementById('searchInput').value = '';
-      document.getElementById('departmentSelect').value = '';
-      document.getElementById('classificationSelect').value = '';
-      document.getElementById('dispositionSelect').value = '';
-      document.getElementById('statusSelect').value = '';
-      document.getElementById('retentionSelect').value = '';
-      document.getElementById('dateFromInput').value = '';
-      document.getElementById('dateToInput').value = '';
-
-      const rows = document.querySelectorAll('#recordsTableBody tr');
-      rows.forEach(row => {
-        row.style.display = '';
-      });
-
-      const filterButton = document.querySelector('.filter-button');
-      filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-      filterButton.style.background = '';
-      filterButton.style.color = '';
-
-      hideFilterModal();
-      showToast('Filters cleared');
-    }
-
-    // --- Date Calculation Functions ---
-    function parseRetentionPeriod(retentionPeriod) {
-      if (!retentionPeriod) return 0;
-
-      if (retentionPeriod === 'Permanent') {
-        return 'permanent';
-      }
-
-      const match = retentionPeriod.match(/(\d+)\s*Year/);
-      if (match && match[1]) {
-        return parseInt(match[1]);
-      }
-
-      return 0;
-    }
-
-    function calculateEndDate() {
-      const startDate = document.getElementById('inclusiveDateFrom').value;
-      const retentionPeriod = document.getElementById('retentionPeriod').value;
-      const retentionYears = parseRetentionPeriod(retentionPeriod);
-
-      if (!startDate || !retentionYears) {
-        document.getElementById('inclusiveDateTo').value = '';
-        return;
-      }
-
-      if (retentionYears === 'permanent') {
-        document.getElementById('inclusiveDateTo').value = '';
-        return;
-      }
-
-      const start = new Date(startDate);
-      const years = parseInt(retentionYears);
-
-      if (!isNaN(years)) {
-        const endDate = new Date(start);
-        endDate.setFullYear(start.getFullYear() + years);
-        const formattedEndDate = endDate.toISOString().split('T')[0];
-        document.getElementById('inclusiveDateTo').value = formattedEndDate;
-      }
-    }
-
-    // --- Initialize Select2 ---
-    function initializeSelect2() {
-      if (!select2Initialized) {
-        try {
-          $('#classification').select2({
-            placeholder: 'Search and select classification...',
-            allowClear: true,
-            width: '100%',
-            dropdownParent: $('#recordModal')
-          });
-
-          $('#classification').on('change', function () {
-            const selectedOption = $(this).find('option:selected');
-            const retention = selectedOption.data('retention');
-            const disposition = selectedOption.data('disposition');
-            const category = selectedOption.data('category');
-            const authority = selectedOption.data('authority');
-
-            console.log('Classification changed:', {
-              retention: retention,
-              disposition: disposition,
-              category: category,
-              authority: authority
-            });
-
-            if (retention) {
-              $('#retentionPeriod').val(retention);
-              $('#disposition').val(disposition || '');
-              calculateEndDate();
-
-              $('#infoRetention').text(retention);
-              $('#infoDisposition').text(disposition || 'Not specified');
-              $('#infoCategory').text(category || 'Not specified');
-              $('#infoAuthority').text(authority || 'Not specified');
-              $('#classificationInfo').addClass('show');
-            } else {
-              $('#retentionPeriod').val('');
-              $('#disposition').val('');
-              $('#classificationInfo').removeClass('show');
-            }
-          });
-
-          select2Initialized = true;
-          console.log('Select2 initialized successfully');
-        } catch (error) {
-          console.error('Select2 initialization error:', error);
-          $('#classification').show();
-        }
-      }
-    }
-
-    // --- File Upload Functions ---
     function initializeFileUpload() {
       const uploadArea = document.getElementById('uploadArea');
       const fileInput = document.getElementById('fileUpload');
 
-      // Clear any existing event listeners by cloning and replacing
       const newFileInput = fileInput.cloneNode(true);
       fileInput.parentNode.replaceChild(newFileInput, fileInput);
 
-      // Set up the new file input
       const currentFileInput = document.getElementById('fileUpload');
-      
+
       currentFileInput.addEventListener('change', (e) => {
         console.log('File input changed, files selected:', e.target.files.length);
         handleFileSelect(e.target.files);
-        // Reset the input to allow selecting the same file again
         currentFileInput.value = '';
       });
 
@@ -1170,7 +1403,6 @@ try {
         handleFileSelect(files);
       });
 
-      // Click to select files
       uploadArea.addEventListener('click', () => {
         currentFileInput.click();
       });
@@ -1180,15 +1412,14 @@ try {
       if (!files || files.length === 0) return;
 
       const newFiles = Array.from(files);
-      
-      // Check for duplicates by filename and size
+
       const uniqueNewFiles = newFiles.filter(newFile => {
-        const isDuplicate = selectedFiles.some(existingFile => 
-          existingFile.name === newFile.name && 
+        const isDuplicate = selectedFiles.some(existingFile =>
+          existingFile.name === newFile.name &&
           existingFile.size === newFile.size &&
           existingFile.lastModified === newFile.lastModified
         );
-        
+
         if (isDuplicate) {
           console.log('Skipping duplicate file:', newFile.name);
           return false;
@@ -1290,20 +1521,90 @@ try {
       document.getElementById('recordForm').reset();
       document.getElementById('recordId').value = '';
       selectedFiles = [];
-      removedFiles = []; // Clear removed files array
-      
-      // Remove all hidden removal inputs
+      removedFiles = [];
+
       document.querySelectorAll('input[name="removed_files[]"]').forEach(input => input.remove());
-      
+
       updateFileList();
 
-      $('#retentionPeriod').val('');
-      $('#disposition').val('');
+      // Reset calculated fields
+      document.getElementById('timeValue').value = '';
+      document.getElementById('periodTo').value = '';
+      document.getElementById('activeYears').value = '';
+      document.getElementById('storageYears').value = '';
+      document.getElementById('storageYears').readOnly = false;
+      document.getElementById('storageYears').classList.remove('view-field');
+      document.getElementById('storageYears').style.backgroundColor = 'white';
+      document.getElementById('totalYears').value = '';
+      document.getElementById('disposition').value = '';
       $('#classificationInfo').removeClass('show');
+
+      // Reset checkboxes and radio buttons
+      document.querySelectorAll('input[name="records_medium[]"]').forEach(cb => cb.checked = false);
+      document.querySelector('input[name="restrictions"][value="Open Access"]').checked = true;
 
       if (select2Initialized) {
         $('#classification').val(null).trigger('change');
       }
+    }
+
+    // --- AJAX Functions for Data Retrieval ---
+    function fetchRecordFiles(recordId) {
+      console.log('Fetching files for record:', recordId);
+      return fetch(`../get_record_files.php?id=${recordId}`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.success) {
+            console.log(`Successfully loaded ${data.files ? data.files.length : 0} files`);
+            return data.files || [];
+          } else {
+            throw new Error(data.message || 'Failed to load files');
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching files:', error);
+          return [];
+        });
+    }
+
+    function fetchRecordData(recordId) {
+      console.log('Fetching record data for ID:', recordId);
+
+      return fetch(`../get_record.php?id=${recordId}`)
+        .then(response => {
+          console.log('Response status:', response.status);
+
+          if (response.status === 500) {
+            return response.text().then(errorText => {
+              console.error('PHP 500 Error Detected');
+              let errorMessage = 'Server Error (500) - Check PHP configuration';
+              throw new Error(errorMessage);
+            });
+          }
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          return response.json();
+        })
+        .then(data => {
+          if (data.success && data.record) {
+            console.log('Record data loaded successfully');
+            return data.record;
+          } else {
+            throw new Error(data.message || 'Failed to load record data');
+          }
+        })
+        .catch(error => {
+          console.error('fetchRecordData error:', error);
+          throw error;
+        });
     }
 
     // --- Record Modal Functions ---
@@ -1335,23 +1636,22 @@ try {
         saveRecordBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> LOADING...';
         saveRecordBtn.disabled = true;
 
-        // Load record data and files simultaneously via AJAX
         Promise.all([
             fetchRecordData(recordId),
             fetchRecordFiles(recordId)
-        ])
-        .then(([record, files]) => {
+          ])
+          .then(([record, files]) => {
             populateFormWithRecordData(record);
             displayExistingFiles(files);
             saveRecordBtn.innerHTML = 'UPDATE RECORD';
             saveRecordBtn.disabled = false;
-        })
-        .catch(error => {
+          })
+          .catch(error => {
             console.error('Error loading record:', error);
             showToast('Error loading record data: ' + error.message, true);
             saveRecordBtn.innerHTML = 'UPDATE RECORD';
             saveRecordBtn.disabled = false;
-        });
+          });
       }
     }
 
@@ -1364,49 +1664,84 @@ try {
     function populateFormWithRecordData(record) {
       console.log('Populating form with record data:', record);
 
-      document.getElementById('recordTitle').value = record.record_title || '';
+      document.getElementById('recordSeriesTitle').value = record.record_series_title || '';
       document.getElementById('officeDepartment').value = record.office_id || '';
-      document.getElementById('recordSeries').value = record.record_series_code || '';
-      
-      // Ensure disposition is set
+      document.getElementById('recordSeriesCode').value = record.record_series_code || '';
       document.getElementById('disposition').value = record.disposition_type || '';
-      console.log('Disposition set to:', record.disposition_type);
+      document.getElementById('timeValue').value = record.time_value || '';
 
-      if (record.inclusive_date_from) {
-        const fromDate = new Date(record.inclusive_date_from);
-        document.getElementById('inclusiveDateFrom').value = fromDate.toISOString().split('T')[0];
+      if (record.period_from) {
+        const fromDate = new Date(record.period_from);
+        document.getElementById('periodFrom').value = fromDate.toISOString().split('T')[0];
       } else {
-        document.getElementById('inclusiveDateFrom').value = '';
+        document.getElementById('periodFrom').value = '';
       }
 
-      if (record.inclusive_date_to) {
-        const toDate = new Date(record.inclusive_date_to);
-        document.getElementById('inclusiveDateTo').value = toDate.toISOString().split('T')[0];
+      if (record.period_to) {
+        const toDate = new Date(record.period_to);
+        document.getElementById('periodTo').value = toDate.toISOString().split('T')[0];
       } else {
-        document.getElementById('inclusiveDateTo').value = '';
+        document.getElementById('periodTo').value = '';
       }
 
-      document.getElementById('retentionPeriod').value = record.retention_period || '';
+      document.getElementById('activeYears').value = record.active_years || '';
+      document.getElementById('storageYears').value = record.storage_years || '';
+      document.getElementById('totalYears').value = record.total_years || '';
+      document.getElementById('volume').value = record.volume || '';
+
+      // Handle records_medium for ENUM field - split combined values
+      if (record.records_medium) {
+        console.log('Setting medium from:', record.records_medium);
+        
+        // Reset all checkboxes first
+        document.querySelectorAll('input[name="records_medium[]"]').forEach(cb => {
+          cb.checked = false;
+        });
+        
+        // Split by slash to handle combined ENUM values like "Paper/Electronic Files"
+        const mediums = record.records_medium.split('/').map(m => m.trim());
+        console.log('Split mediums:', mediums);
+        
+        // Check each individual medium
+        mediums.forEach(medium => {
+          const checkbox = document.querySelector(`input[name="records_medium[]"][value="${medium}"]`);
+          if (checkbox) {
+            checkbox.checked = true;
+            console.log('Checked checkbox for:', medium);
+          }
+        });
+      } else {
+        // Reset all checkboxes if no medium specified
+        document.querySelectorAll('input[name="records_medium[]"]').forEach(cb => {
+          cb.checked = false;
+        });
+      }
+
+      if (record.restrictions) {
+        const radio = document.querySelector(`input[name="restrictions"][value="${record.restrictions}"]`);
+        if (radio) {
+          radio.checked = true;
+        } else {
+          // Default to Open Access if value not found
+          document.querySelector('input[name="restrictions"][value="Open Access"]').checked = true;
+        }
+      } else {
+        document.querySelector('input[name="restrictions"][value="Open Access"]').checked = true;
+      }
+
+      document.getElementById('location').value = record.location_of_records || '';
+      document.getElementById('frequency').value = record.frequency_of_use || '';
+      document.getElementById('duplication').value = record.duplication || '';
+      document.getElementById('utilityValue').value = record.utility_value || '';
       document.getElementById('description').value = record.description || '';
+      document.getElementById('dispositionProvision').value = record.disposition_provision || '';
 
       if (record.class_id) {
         setTimeout(() => {
           if (select2Initialized) {
             $('#classification').val(record.class_id).trigger('change');
-            
-            // Force set disposition after classification is loaded
-            setTimeout(() => {
-              if (record.disposition_type) {
-                document.getElementById('disposition').value = record.disposition_type;
-              }
-            }, 500);
           } else {
             document.getElementById('classification').value = record.class_id;
-            setTimeout(() => {
-              if (select2Initialized) {
-                $('#classification').val(record.class_id).trigger('change');
-              }
-            }, 500);
           }
         }, 300);
       }
@@ -1424,10 +1759,10 @@ try {
       }
       statusInput.value = 'Inactive';
 
-      const recordTitle = document.getElementById('recordTitle').value.trim();
+      const recordTitle = document.getElementById('recordSeriesTitle').value.trim();
       if (!recordTitle) {
         showToast('Record title is required even for drafts', true);
-        document.getElementById('recordTitle').focus();
+        document.getElementById('recordSeriesTitle').focus();
         return;
       }
 
@@ -1450,64 +1785,78 @@ try {
       viewRecordModal.classList.add('show');
       document.body.style.overflow = 'hidden';
 
-      // Set loading state
       document.getElementById('viewRecordTitle').textContent = 'Loading...';
       document.getElementById('viewOfficeDepartment').textContent = 'Loading...';
       document.getElementById('viewRecordSeries').textContent = 'Loading...';
       document.getElementById('viewDisposition').textContent = 'Loading...';
-      document.getElementById('viewInclusiveDate').textContent = 'Loading...';
+      document.getElementById('viewPeriodCovered').textContent = 'Loading...';
       document.getElementById('viewRetentionPeriod').textContent = 'Loading...';
+      document.getElementById('viewTimeValue').textContent = 'Loading...';
       document.getElementById('viewStatus').textContent = 'Loading...';
       document.getElementById('viewClassification').textContent = 'Loading...';
       document.getElementById('viewDescription').textContent = 'Loading...';
 
-      // Clear previous files
       document.getElementById('viewUploadedFilesList').innerHTML = '<div class="loading-files">Loading files...</div>';
 
-      // Load record data and files via AJAX
       Promise.all([
           fetchRecordData(recordId),
           fetchRecordFiles(recordId)
-      ])
-      .then(([record, files]) => {
+        ])
+        .then(([record, files]) => {
           populateViewRecordModal(record);
           displayViewRecordFiles(files);
-      })
-      .catch(error => {
+        })
+        .catch(error => {
           console.error('Error loading record for view:', error);
           document.getElementById('viewRecordTitle').textContent = 'Error Loading Record';
           document.getElementById('viewOfficeDepartment').textContent = 'N/A';
           document.getElementById('viewRecordSeries').textContent = 'N/A';
           document.getElementById('viewDisposition').textContent = 'N/A';
-          document.getElementById('viewInclusiveDate').textContent = 'N/A';
+          document.getElementById('viewPeriodCovered').textContent = 'N/A';
           document.getElementById('viewRetentionPeriod').textContent = 'N/A';
+          document.getElementById('viewTimeValue').textContent = 'N/A';
           document.getElementById('viewStatus').textContent = 'N/A';
           document.getElementById('viewClassification').textContent = 'N/A';
           document.getElementById('viewDescription').textContent = 'Error: ' + error.message;
           document.getElementById('viewUploadedFilesList').innerHTML = '<div style="padding: 10px 15px; color: #78909c; font-style: italic; font-size: 14px;">Error loading files.</div>';
 
           showToast('Error loading record data: ' + error.message, true);
-      });
+        });
     }
 
     function populateViewRecordModal(record) {
       console.log('Populating view modal with record:', record);
 
-      document.getElementById('viewRecordTitle').textContent = record.record_title || 'N/A';
+      document.getElementById('viewRecordTitle').textContent = record.record_series_title || 'N/A';
       document.getElementById('viewOfficeDepartment').textContent = record.office_name || 'N/A';
       document.getElementById('viewRecordSeries').textContent = record.record_series_code || 'N/A';
       document.getElementById('viewDisposition').textContent = record.disposition_type || 'N/A';
 
-      const fromDate = record.inclusive_date_from ? formatDateForDisplay(record.inclusive_date_from) : 'N/A';
-      const toDate = record.inclusive_date_to ? formatDateForDisplay(record.inclusive_date_to) : 'N/A';
-      document.getElementById('viewInclusiveDate').textContent = `${fromDate} - ${toDate}`;
+      const fromDate = record.period_from ? formatDateForDisplay(record.period_from) : 'N/A';
+      const toDate = record.period_to ? formatDateForDisplay(record.period_to) : 'N/A';
+      document.getElementById('viewPeriodCovered').textContent = `${fromDate} - ${toDate}`;
 
-      document.getElementById('viewRetentionPeriod').textContent = record.retention_period || 'N/A';
+      let retentionText = '';
+      if (record.active_years) retentionText += `Active: ${record.active_years} yrs`;
+      if (record.storage_years) retentionText += retentionText ? `, Storage: ${record.storage_years} yrs` : `Storage: ${record.storage_years} yrs`;
+      if (record.total_years) retentionText += retentionText ? `, Total: ${record.total_years} yrs` : `Total: ${record.total_years} yrs`;
+      document.getElementById('viewRetentionPeriod').textContent = retentionText || 'N/A';
+
+      document.getElementById('viewTimeValue').innerHTML = record.time_value ?
+        `<span class="time-value-badge ${record.time_value.toLowerCase()}">${record.time_value}</span>` : 'N/A';
+
       document.getElementById('viewStatus').textContent = record.status || 'N/A';
       document.getElementById('viewClassification').textContent = record.class_name || 'N/A';
-      document.getElementById('viewDescription').textContent = record.description || 'No description available.';
 
-      const viewModalTitle = document.getElementById('viewRecordModalTitle');
+      document.getElementById('viewVolume').textContent = record.volume ? `${record.volume} ${record.volume_unit || ''}` : 'N/A';
+      document.getElementById('viewMedium').textContent = record.records_medium || 'N/A';
+      document.getElementById('viewRestrictions').textContent = record.restrictions || 'N/A';
+      document.getElementById('viewLocation').textContent = record.location_of_records || 'N/A';
+      document.getElementById('viewFrequency').textContent = record.frequency_of_use || 'N/A';
+      document.getElementById('viewUtilityValue').textContent = record.utility_value || 'N/A';
+      document.getElementById('viewDescription').textContent = record.description || 'No description available.';
+      document.getElementById('viewDispositionProvision').textContent = record.disposition_provision || 'No disposition instructions.';
+
       viewModalTitle.textContent = `VIEW RECORD - ${record.record_series_code || 'ID: ' + record.record_id}`;
     }
 
@@ -1531,18 +1880,17 @@ try {
 
     // --- Form Validation ---
     function validateForm() {
-      const recordTitle = document.getElementById('recordTitle').value.trim();
+      const recordTitle = document.getElementById('recordSeriesTitle').value.trim();
       const officeId = document.getElementById('officeDepartment').value;
-      const recordSeries = document.getElementById('recordSeries').value.trim();
+      const recordSeries = document.getElementById('recordSeriesCode').value.trim();
       const classId = document.getElementById('classification').value;
-      const retentionPeriod = document.getElementById('retentionPeriod').value.trim();
-      const startDate = document.getElementById('inclusiveDateFrom').value;
-      const disposition = document.getElementById('disposition').value;
-      
+      const startDate = document.getElementById('periodFrom').value;
+      const activeYears = parseInt(document.getElementById('activeYears').value) || 0;
+      const storageYears = parseInt(document.getElementById('storageYears').value) || 0;
+      const timeValue = document.getElementById('timeValue').value;
+
       let isValid = true;
       let errorMessage = '';
-
-      console.log('Form validation - Disposition value:', disposition);
 
       if (!recordTitle) {
         errorMessage = 'Please enter a record title';
@@ -1556,85 +1904,233 @@ try {
       } else if (!classId) {
         errorMessage = 'Please select a classification';
         isValid = false;
-      } else if (!retentionPeriod) {
-        errorMessage = 'Please select a classification to auto-populate retention period';
-        isValid = false;
       } else if (!startDate) {
         errorMessage = 'Please select a start date';
         isValid = false;
-      } else if (!disposition) {
-        errorMessage = 'Disposition type is required. Please select a valid classification.';
-        isValid = false;
+      } else if (timeValue !== 'Permanent') {
+        // For non-permanent records, we need at least active OR storage years
+        if (activeYears === 0 && storageYears === 0) {
+          errorMessage = 'Retention period is required. Please enter either Active or Storage retention years';
+          isValid = false;
+        }
       }
 
       if (!isValid) {
         showToast(errorMessage, true);
-        if (!recordTitle) document.getElementById('recordTitle').focus();
+        if (!recordTitle) document.getElementById('recordSeriesTitle').focus();
         else if (!officeId) document.getElementById('officeDepartment').focus();
-        else if (!recordSeries) document.getElementById('recordSeries').focus();
+        else if (!recordSeries) document.getElementById('recordSeriesCode').focus();
         else if (!classId) document.getElementById('classification').focus();
-        else if (!startDate) document.getElementById('inclusiveDateFrom').focus();
-        else if (!disposition) document.getElementById('disposition').focus();
+        else if (!startDate) document.getElementById('periodFrom').focus();
+        else if (activeYears === 0 && storageYears === 0) document.getElementById('storageYears').focus();
       }
 
       return isValid;
     }
 
     // --- Form Submission Handler ---
-    recordForm.addEventListener('submit', function (e) {
+    recordForm.addEventListener('submit', async function(e) {
       e.preventDefault();
 
       if (!validateForm()) {
         return;
       }
 
+      // Process medium checkboxes
+      const mediumCheckboxes = document.querySelectorAll('input[name="records_medium[]"]:checked');
+      const mediumValues = Array.from(mediumCheckboxes).map(cb => cb.value);
+
       const formData = new FormData(this);
       const isEdit = document.getElementById('recordId').value !== '';
 
-      selectedFiles.forEach((file, index) => {
-        formData.append('attachments[]', file, file.name);
+      // FIX: Remove any existing records_medium data
+      formData.delete('records_medium');
+      formData.delete('records_medium[]');
+      
+      // Add each checkbox value separately - using the array format
+      mediumValues.forEach(value => {
+        formData.append('records_medium[]', value);
       });
 
+      // Add files to FormData
+      selectedFiles.forEach((file, index) => {
+        formData.append('attachments[]', file);
+      });
+
+      // Get file tags from inputs (both new and existing)
       const fileTagInputs = document.querySelectorAll('.file-tag-input');
       fileTagInputs.forEach((input, index) => {
-        formData.append(`file_tags[${index}]`, input.value);
+        if (input.value.trim()) {
+          formData.append(`file_tags[]`, input.value.trim());
+        }
       });
 
       if (!formData.has('status')) {
         formData.append('status', 'Active');
       }
 
+      // Add action parameter
+      formData.append('action', isEdit ? 'edit' : 'add');
+
+      // Show loading state
       saveRecordBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (isEdit ? 'UPDATING...' : 'SAVING...');
       saveRecordBtn.disabled = true;
 
-      const actionUrl = this.action;
-
-      fetch(actionUrl, {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin'
-      })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast(data.message);
-            setTimeout(() => {
-              hideRecordFormModal();
-              window.location.reload();
-            }, 1500);
+      try {
+        // Log form data for debugging
+        console.log('Form data being sent:');
+        for (let pair of formData.entries()) {
+          if (pair[0] === 'attachments[]') {
+            console.log(pair[0] + ': [File] ' + pair[1].name);
           } else {
-            showToast('Error: ' + (data.message || 'Unknown error'), true);
+            console.log(pair[0] + ': ' + pair[1]);
           }
-        })
-        .catch(error => {
-          console.error('Fetch error:', error);
-          showToast('Error saving record: ' + error.message, true);
-        })
-        .finally(() => {
-          saveRecordBtn.innerHTML = isEdit ? 'UPDATE RECORD' : 'SAVE RECORD';
-          saveRecordBtn.disabled = false;
+        }
+
+        // Use AJAX to submit the form data
+        const response = await fetch(this.action, {
+          method: 'POST',
+          body: formData
         });
+
+        const result = await response.json();
+        console.log('Server response:', result);
+
+        if (result.success) {
+          showToast(result.message + (result.files_uploaded > 0 ? ` (${result.files_uploaded} file(s) uploaded)` : ''));
+
+          // Reset form and close modal after a delay
+          setTimeout(() => {
+            hideRecordFormModal();
+            clearForm();
+
+            // Reload the page to show updated records
+            location.reload();
+          }, 1500);
+        } else {
+          throw new Error(result.message || 'Failed to save record');
+        }
+      } catch (error) {
+        console.error('Form submission error:', error);
+        showToast('Error: ' + error.message, true);
+      } finally {
+        saveRecordBtn.innerHTML = isEdit ? 'UPDATE RECORD' : 'SAVE RECORD';
+        saveRecordBtn.disabled = false;
+      }
     });
+
+    // --- Filter Functions ---
+    function applyFilters() {
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      const department = document.getElementById('departmentSelect').value;
+      const classification = document.getElementById('classificationSelect').value;
+      const disposition = document.getElementById('dispositionSelect').value;
+      const status = document.getElementById('statusSelect').value;
+      const timeValue = document.getElementById('timeValueSelect').value;
+      const dateFrom = document.getElementById('dateFromInput').value;
+      const dateTo = document.getElementById('dateToInput').value;
+
+      const rows = document.querySelectorAll('#recordsTableBody tr');
+      let visibleCount = 0;
+
+      rows.forEach(row => {
+        if (row.querySelector('td[colspan="9"]')) {
+          return;
+        }
+
+        let showRow = true;
+
+        if (searchTerm) {
+          const recordTitle = row.cells[1].textContent.toLowerCase();
+          const recordCode = row.cells[0].textContent.toLowerCase();
+          if (!recordTitle.includes(searchTerm) && !recordCode.includes(searchTerm)) {
+            showRow = false;
+          }
+        }
+
+        if (department && showRow) {
+          const officeName = row.getAttribute('data-office-name');
+          const departmentText = document.getElementById('departmentSelect').options[document.getElementById('departmentSelect').selectedIndex].text;
+          if (officeName !== departmentText) {
+            showRow = false;
+          }
+        }
+
+        if (status && showRow) {
+          const statusBadge = row.cells[7].querySelector('.badge');
+          if (statusBadge && statusBadge.textContent.toLowerCase() !== status) {
+            showRow = false;
+          }
+        }
+
+        if (timeValue && showRow) {
+          const timeValueBadge = row.cells[5].querySelector('.time-value-badge');
+          if (timeValueBadge && timeValueBadge.textContent !== timeValue) {
+            showRow = false;
+          }
+        }
+
+        if (disposition && showRow) {
+          const dispositionCell = row.cells[6].textContent;
+          if (dispositionCell !== disposition) {
+            showRow = false;
+          }
+        }
+
+        row.style.display = showRow ? '' : 'none';
+        if (showRow) visibleCount++;
+      });
+
+      const filterButton = document.querySelector('.filter-button');
+      const hasActiveFilters = searchTerm || department || classification || disposition || status || timeValue || dateFrom || dateTo;
+
+      if (hasActiveFilters) {
+        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
+        filterButton.style.background = '#1f366c';
+        filterButton.style.color = 'white';
+      } else {
+        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
+        filterButton.style.background = '';
+        filterButton.style.color = '';
+      }
+
+      const noRecordsRow = document.querySelector('#recordsTableBody tr td[colspan="9"]');
+      if (visibleCount === 0) {
+        if (!noRecordsRow) {
+          const tbody = document.getElementById('recordsTableBody');
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #78909c;">No records match your filters.</td></tr>`;
+        }
+      } else if (noRecordsRow && noRecordsRow.textContent.includes('match your filters')) {
+        location.reload();
+      }
+
+      hideFilterModal();
+      showToast('Filters applied successfully');
+    }
+
+    function clearFilters() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('departmentSelect').value = '';
+      document.getElementById('classificationSelect').value = '';
+      document.getElementById('dispositionSelect').value = '';
+      document.getElementById('statusSelect').value = '';
+      document.getElementById('timeValueSelect').value = '';
+      document.getElementById('dateFromInput').value = '';
+      document.getElementById('dateToInput').value = '';
+
+      const rows = document.querySelectorAll('#recordsTableBody tr');
+      rows.forEach(row => {
+        row.style.display = '';
+      });
+
+      const filterButton = document.querySelector('.filter-button');
+      filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
+      filterButton.style.background = '';
+      filterButton.style.color = '';
+
+      hideFilterModal();
+      showToast('Filters cleared');
+    }
 
     // --- Global Event Listeners ---
     recordFormModal.addEventListener('click', (event) => {
@@ -1665,14 +2161,35 @@ try {
       }
     });
 
-    // --- Initialize Application ---
-    document.addEventListener('DOMContentLoaded', function () {
-      console.log('🔧 Record Management System Loaded');
+    // --- Setup Add Record Button ---
+    function setupAddRecordButton() {
+      const addRecordBtn = document.getElementById('addRecordBtn');
+      if (addRecordBtn) {
+        // Remove any existing inline onclick
+        addRecordBtn.removeAttribute('onclick');
 
-      // Initialize components
+        // Add event listener
+        addRecordBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          console.log('Add New Record button clicked');
+          openRecordModal('add');
+        });
+      }
+    }
+
+    // --- Initialize Application ---
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('Record Management System Loaded');
       initializeFileUpload();
-      document.getElementById('inclusiveDateFrom').addEventListener('change', calculateEndDate);
+      setupRetentionCalculation();
+      setupAddRecordButton();
+
+      // Also set up event listeners for file input
+      document.getElementById('fileUpload').addEventListener('change', function(e) {
+        handleFileSelect(e.target.files);
+      });
     });
   </script>
 </body>
+
 </html>

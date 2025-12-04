@@ -80,8 +80,8 @@ main {
 
 /* ===== DASHBOARD LAYOUT ===== */
 .dashboard-container {
-  margin: 0 auto;
-  max-width: 1400px;
+  margin: 0;
+  /* max-width: 1400px; */
   padding: var(--space-sm);
   height: 100%;
   display: flex;

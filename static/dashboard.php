@@ -45,7 +45,7 @@ if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
           <div class="status-line teal"></div>
           <div class="card-content">
             <div class="data-text">
-              <h2 class="label">ACTIVE FILES</h2>
+              <h2 class="label">ACTIVE RECORDS</h2>
               <p class="value"><?php echo number_format($counts['active_files']); ?></p>
             </div>
             <i class="fas fa-running icon"></i>
