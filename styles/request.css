@@ -318,6 +318,7 @@ tbody tr:hover {
 
 tbody tr:last-child td {
     border-bottom: none;
+    
 }
 
 /* Center align badges and action buttons */
@@ -961,7 +962,17 @@ td .view-btn {
     transform: none;
     box-shadow: none;
 }
-
+.btn-app{
+    background-color: #1e8a62;
+    color: white;
+    border: 1px solid #1e8a62;
+}
+/* === MODALE FOOTER=== */
+.modal-footer{
+    display: flex;
+    justify-content:space-between;
+    margin: 15px;
+}
 /* ===== MODAL STYLES ===== */
 .modal-backdrop {
     display: none;
@@ -1246,7 +1257,7 @@ td .view-btn {
 }
 
 .form-group {
-    margin-bottom: 0;
+    margin-bottom: 10px;
 }
 
 .form-group.full-width {
