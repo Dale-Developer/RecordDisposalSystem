@@ -341,7 +341,7 @@ td .edit-action-btn {
     opacity 0.3s ease-out;
   margin: 40px auto;
   position: relative;
-  width: 95%;
+  width: 50%;
   max-width: 90vw;
 }
 
@@ -514,7 +514,7 @@ td .edit-action-btn {
 .filter-card {
   padding: clamp(20px, 3vw, 30px);
   max-width: 90vw;
-  width: 95%;
+  width: 50%;
   margin: 20px auto;
 }
 

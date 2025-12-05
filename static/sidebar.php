@@ -51,10 +51,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
     </div> -->
     <div class="profile-nav">
       
-    <div class="search-container">
+    <!-- <div class="search-container">
       <i class="bx bx-search"></i>
       <input type="text" placeholder="Search.." />
-    </div>
+    </div> -->
       <a class="profile-icon" href="#">
         <i class="bx bx-user-circle"></i>
         <span><?php echo htmlspecialchars($first_name); ?></span>
@@ -96,12 +96,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </a>
           </li>
         </li>
-        <li>
+        <!-- <li>
           <a href="../static/disposal.php" class="<?php echo ($current_page == 'disposal.php') ? 'active' : ''; ?>" data-page="disposal">
             <i class="bx bxs-trash"></i>
             <span>Disposal</span>
           </a>
-        </li>
+        </li> -->
         <li>
           <a href="../static/reports.php" class="<?php echo ($current_page == 'reports.php') ? 'active' : ''; ?>" data-page="reports">
             <i class="bx bxs-report"></i>
