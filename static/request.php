@@ -17,6 +17,91 @@ if (!$tableExists) {
     $messageType = 'error';
 }
 
+// ========== PROCESS APPROVE/DECLINE REQUESTS ==========
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
+    try {
+        if (!$tableExists) {
+            throw new Exception("Database setup incomplete. Please contact administrator.");
+        }
+
+        $request_id = (int) $_POST['request_id'];
+        $action = $_POST['action_type'];
+        $user_id = $_SESSION['user_id'] ?? null;
+
+        if (!$user_id) {
+            throw new Exception("User not logged in");
+        }
+
+        if ($request_id <= 0) {
+            throw new Exception("Invalid request ID");
+        }
+
+        // Start transaction
+        $pdo->beginTransaction();
+
+        if ($action === 'approve') {
+            // Update request status to Approved
+            $stmt = $pdo->prepare("
+                UPDATE disposal_requests 
+                SET status = 'Approved' 
+                WHERE request_id = ?
+            ");
+            $stmt->execute([$request_id]);
+
+            // Update all records attached to this request to 'Disposed'
+            $updateRecords = $pdo->prepare("
+                UPDATE records r
+                JOIN disposal_request_details drd ON r.record_id = drd.record_id
+                SET r.status = 'Disposed'
+                WHERE drd.request_id = ?
+            ");
+            $updateRecords->execute([$request_id]);
+
+            $_SESSION['message'] = "Request R-" . str_pad($request_id, 3, '0', STR_PAD_LEFT) . " has been approved. All attached records have been marked as Disposed.";
+            $_SESSION['message_type'] = 'success';
+
+        } elseif ($action === 'decline') {
+            // Update request status to Rejected
+            $stmt = $pdo->prepare("
+                UPDATE disposal_requests 
+                SET status = 'Rejected' 
+                WHERE request_id = ?
+            ");
+            $stmt->execute([$request_id]);
+
+            // Update all records attached to this request back to 'Archived'
+            $updateRecords = $pdo->prepare("
+                UPDATE records r
+                JOIN disposal_request_details drd ON r.record_id = drd.record_id
+                SET r.status = 'Archived'
+                WHERE drd.request_id = ?
+            ");
+            $updateRecords->execute([$request_id]);
+
+            $_SESSION['message'] = "Request R-" . str_pad($request_id, 3, '0', STR_PAD_LEFT) . " has been rejected. All attached records have been returned to Archived status.";
+            $_SESSION['message_type'] = 'success';
+
+        } else {
+            throw new Exception("Invalid action type");
+        }
+
+        // Commit transaction
+        $pdo->commit();
+
+        // Redirect to prevent form resubmission
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
+
+    } catch (Exception $e) {
+        // Rollback on error
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $message = $e->getMessage();
+        $messageType = 'error';
+    }
+}
+
 // Process disposal request form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_type']) && $_POST['submit_type'] === 'disposal_request') {
     try {
@@ -116,8 +201,17 @@ if (isset($_SESSION['message'])) {
 }
 
 // Query to get archived records for disposal
+// Query to get archived records for disposal
+// Query to get archived records for disposal
 try {
     if ($tableExists) {
+        // Debug: Check what statuses exist
+        $debugSql = "SELECT DISTINCT status FROM records";
+        $debugStmt = $pdo->query($debugSql);
+        $statuses = $debugStmt->fetchAll(PDO::FETCH_COLUMN);
+        error_log("Available statuses in records: " . implode(', ', $statuses));
+
+        // Get archived records - REMOVED disposition_type filter temporarily for testing
         $sql = "SELECT 
                     r.record_id,
                     r.record_series_code,
@@ -134,16 +228,61 @@ try {
                 JOIN offices o ON r.office_id = o.office_id
                 JOIN record_classification rc ON r.class_id = rc.class_id
                 LEFT JOIN retention_periods rp ON r.retention_period_id = rp.period_id
-                WHERE r.status = 'Archived'
-                AND r.disposition_type IN ('Dispose', 'Review')
+                WHERE r.status = 'Archived'  -- ONLY Archived status
                 AND r.record_id NOT IN (
-                    SELECT record_id FROM disposal_request_details
+                    SELECT drd.record_id 
+                    FROM disposal_request_details drd
+                    JOIN disposal_requests dr ON drd.request_id = dr.request_id
+                    WHERE dr.status IN ('Pending', 'Approved')  -- Exclude from Pending AND Approved requests
                 )
                 ORDER BY r.record_series_code ASC";
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute();
         $disposableRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        error_log("Found " . count($disposableRecords) . ' archived records for disposal');
+
+        // Debug: Show what we found
+        if (count($disposableRecords) > 0) {
+            foreach ($disposableRecords as $record) {
+                error_log("Record ID: {$record['record_id']}, Code: {$record['record_series_code']}, " .
+                    "Title: {$record['record_title']}, Status: {$record['status']}, " .
+                    "Disposition: {$record['disposition_type']}");
+            }
+        }
+
+        // Check why records might be excluded
+        if (count($disposableRecords) === 0) {
+            // Check all archived records and why they're excluded
+            $checkSql = "SELECT 
+                            r.record_id,
+                            r.record_series_code,
+                            r.record_series_title,
+                            r.status,
+                            r.disposition_type,
+                            CASE 
+                                WHEN EXISTS (
+                                    SELECT 1 FROM disposal_request_details drd
+                                    JOIN disposal_requests dr ON drd.request_id = dr.request_id
+                                    WHERE drd.record_id = r.record_id AND dr.status IN ('Pending', 'Approved')
+                                ) THEN 'In pending/approved request'
+                                ELSE 'Available'
+                            END as availability
+                        FROM records r
+                        WHERE r.status = 'Archived'";
+
+            $checkStmt = $pdo->query($checkSql);
+            $checkResults = $checkStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            error_log("Debug check of ALL archived records:");
+            foreach ($checkResults as $check) {
+                error_log("Record ID: {$check['record_id']}, Code: {$check['record_series_code']}, " .
+                    "Title: {$check['record_series_title']}, Status: {$check['status']}, " .
+                    "Disposition: {$check['disposition_type']}, Availability: {$check['availability']}");
+            }
+        }
+
     } else {
         $disposableRecords = [];
     }
@@ -153,8 +292,8 @@ try {
         $message = "Error loading records: " . $e->getMessage();
         $messageType = 'error';
     }
+    error_log("Error in disposable records query: " . $e->getMessage());
 }
-
 // Query for disposal requests
 try {
     if ($tableExists) {
@@ -200,6 +339,126 @@ try {
     <link rel="stylesheet" href="../styles/request.css">
     <link rel="icon" type="image/x-icon" href="../imgs/fav.png">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <style>
+        /* Additional styles for approve/decline buttons */
+        .btn.approve {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+        }
+
+        .btn.approve:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn.decline {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border: none;
+        }
+
+        .btn.decline:hover {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px;
+            border-top: 1px solid #e5e7eb;
+            background: #f9fafb;
+        }
+
+        .modal-footer-left {
+            display: flex;
+            gap: 12px;
+        }
+
+        .modal-footer-right {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 140px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn i {
+            margin-right: 8px;
+            font-size: 1.1em;
+        }
+
+        .btn-cancel {
+            background: #6b7280;
+            color: white;
+            border: none;
+        }
+
+        .btn-cancel:hover {
+            background: #4b5563;
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            border: none;
+        }
+
+        .btn-submit:hover {
+            background: linear-gradient(135deg, #1d4ed8, #1e40af);
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .status-pending {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fbbf24;
+        }
+
+        .status-approved {
+            background-color: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+
+        .status-rejected {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #f87171;
+        }
+
+        .status-disposed {
+            background-color: #e0f2fe;
+            color: #075985;
+            border: 1px solid #0ea5e9;
+        }
+    </style>
 </head>
 
 <body>
@@ -235,27 +494,27 @@ try {
                 <i class='bx bx-error-circle'></i>
                 Database setup required. Please run this SQL in your database:
                 <pre style="background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 4px; overflow: auto;">
--- 1. First drop the foreign key constraint
-ALTER TABLE `disposal_requests` DROP FOREIGN KEY `disposal_requests_ibfk_1`;
+    -- 1. First drop the foreign key constraint
+    ALTER TABLE `disposal_requests` DROP FOREIGN KEY `disposal_requests_ibfk_1`;
 
--- 2. Then drop the column
-ALTER TABLE `disposal_requests` DROP COLUMN `record_id`;
+    -- 2. Then drop the column
+    ALTER TABLE `disposal_requests` DROP COLUMN `record_id`;
 
--- 3. Create disposal_request_details table
-CREATE TABLE IF NOT EXISTS `disposal_request_details` (
-  `disposal_detail_id` int(11) NOT NULL AUTO_INCREMENT,
-  `request_id` int(11) NOT NULL,
-  `record_id` int(11) NOT NULL,
-  PRIMARY KEY (`disposal_detail_id`),
-  UNIQUE KEY `unique_disposal_request_record` (`request_id`,`record_id`),
-  KEY `record_id` (`record_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+    -- 3. Create disposal_request_details table
+    CREATE TABLE IF NOT EXISTS `disposal_request_details` (
+      `disposal_detail_id` int(11) NOT NULL AUTO_INCREMENT,
+      `request_id` int(11) NOT NULL,
+      `record_id` int(11) NOT NULL,
+      PRIMARY KEY (`disposal_detail_id`),
+      UNIQUE KEY `unique_disposal_request_record` (`request_id`,`record_id`),
+      KEY `record_id` (`record_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- 4. Add foreign key constraints
-ALTER TABLE `disposal_request_details`
-  ADD CONSTRAINT `disposal_request_details_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `disposal_requests` (`request_id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `disposal_request_details_ibfk_2` FOREIGN KEY (`record_id`) REFERENCES `records` (`record_id`);
-                </pre>
+    -- 4. Add foreign key constraints
+    ALTER TABLE `disposal_request_details`
+      ADD CONSTRAINT `disposal_request_details_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `disposal_requests` (`request_id`) ON DELETE CASCADE,
+      ADD CONSTRAINT `disposal_request_details_ibfk_2` FOREIGN KEY (`record_id`) REFERENCES `records` (`record_id`);
+                    </pre>
             </div>
         <?php endif; ?>
 
@@ -300,7 +559,8 @@ ALTER TABLE `disposal_request_details`
                                     <td><?php echo htmlspecialchars($request['first_name'] . ' ' . $request['last_name']); ?>
                                     </td>
                                     <td style="white-space: nowrap">
-                                        <?php echo date('m/d/Y', strtotime($request['request_date'])); ?></td>
+                                        <?php echo date('m/d/Y', strtotime($request['request_date'])); ?>
+                                    </td>
                                     <td style="white-space: nowrap">
                                         <?php
                                         // Calculate period covered
@@ -319,7 +579,7 @@ ALTER TABLE `disposal_request_details`
                                         ?>
                                     </td>
                                     <td style="width: 1%; white-space: nowrap;">
-                                        <span class="status <?php echo strtolower($request['status']); ?>">
+                                        <span class="status-badge status-<?php echo strtolower($request['status']); ?>">
                                             <i class='bx bx-circle' style="font-size: 0.6rem; margin-right: 4px;"></i>
                                             <?php echo $request['status']; ?>
                                         </span>
@@ -447,7 +707,7 @@ ALTER TABLE `disposal_request_details`
                                             <th>CLASSIFICATION</th>
                                             <th>PERIOD COVERED</th>
                                             <th>RETENTION PERIOD</th>
-                                            <th>DISPOSITION</th>
+                                            <th>STATUS</th>
                                         </tr>
                                     </thead>
                                     <tbody id="records-table-body">
@@ -491,8 +751,10 @@ ALTER TABLE `disposal_request_details`
                                                     <td><?php echo $retention; ?></td>
                                                     <td>
                                                         <span
-                                                            class="disposition-tag <?php echo $record['disposition_type'] === 'Archive' ? 'disposition-archive' : 'disposition-dispose'; ?>">
-                                                            <?php echo htmlspecialchars($record['disposition_type']); ?>
+                                                            class="status-badge status-<?php echo strtolower($record['status']); ?>">
+                                                            <i class='bx bx-circle'
+                                                                style="font-size: 0.6rem; margin-right: 4px;"></i>
+                                                            <?php echo htmlspecialchars($record['status']); ?>
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -623,7 +885,7 @@ ALTER TABLE `disposal_request_details`
                 </div>
 
                 <div class="modal-footer">
-                    <div class="modal-footer-right">
+                    <div class="modal-footer-left">
                         <!-- <button type="button" class="btn btn-cancel" onclick="closeViewModal()">
                             <i class='bx bx-x' style="margin-right: 8px;"></i> Close
                         </button> -->
@@ -631,12 +893,12 @@ ALTER TABLE `disposal_request_details`
                             <i class='bx bx-printer' style="margin-right: 8px;"></i> Print Request
                         </button>
                     </div>
-                    <div class="modal-footer-left">
-                        <button type="button" class="btn approve" style="background-color: #1e8a62;">
-                            <i class='bx bx-check' style='color:#ffffff'  ></i>Approve Request
+                    <div class="modal-footer-right">
+                        <button type="button" class="btn approve" id="approve-btn" onclick="approveRequest()">
+                            <i class='bx bx-check' style='color:#ffffff'></i>Approve Request
                         </button>
-                        <button type="button" class="btn decline">
-                            <i class='bx bx-x' style='color:#ffffff' ></i> Decline Request
+                        <button type="button" class="btn decline" id="decline-btn" onclick="declineRequest()">
+                            <i class='bx bx-x' style='color:#ffffff'></i> Decline Request
                         </button>
                     </div>
                 </div>
@@ -645,6 +907,9 @@ ALTER TABLE `disposal_request_details`
     </main>
 
     <script>
+        // ========== GLOBAL VARIABLES ==========
+        let currentRequestId = null;
+
         // ========== DISPOSAL MODAL FUNCTIONS ==========
         function openDisposalModal() {
             document.getElementById('disposal-modal').style.display = 'flex';
@@ -775,9 +1040,16 @@ ALTER TABLE `disposal_request_details`
             modal.style.display = 'flex';
             document.body.style.overflow = 'hidden';
 
+            currentRequestId = requestId;
             document.getElementById('view-request-id').textContent = `R-${String(requestId).padStart(3, '0')}`;
             document.getElementById('view-loading').style.display = 'block';
             document.getElementById('view-content').style.display = 'none';
+
+            // Reset buttons
+            document.getElementById('approve-btn').disabled = false;
+            document.getElementById('decline-btn').disabled = false;
+            document.getElementById('approve-btn').innerHTML = '<i class="bx bx-check" style="color:#ffffff"></i>Approve Request';
+            document.getElementById('decline-btn').innerHTML = '<i class="bx bx-x" style="color:#ffffff"></i> Decline Request';
 
             try {
                 const response = await fetch(`../get_request_details.php?request_id=${requestId}&type=disposal`);
@@ -829,6 +1101,22 @@ ALTER TABLE `disposal_request_details`
             statusElement.className = 'form-input view-only status-badge';
             statusElement.classList.add(`status-${(request.status || 'pending').toLowerCase()}`);
 
+            // Enable/disable buttons based on status
+            const approveBtn = document.getElementById('approve-btn');
+            const declineBtn = document.getElementById('decline-btn');
+            if (request.status === 'Pending') {
+                approveBtn.disabled = false;
+                declineBtn.disabled = false;
+            } else {
+                approveBtn.disabled = true;
+                declineBtn.disabled = true;
+                if (request.status === 'Approved') {
+                    approveBtn.innerHTML = '<i class="bx bx-check-circle" style="color:#ffffff"></i>Already Approved';
+                } else if (request.status === 'Rejected') {
+                    declineBtn.innerHTML = '<i class="bx bx-x-circle" style="color:#ffffff"></i>Already Rejected';
+                }
+            }
+
             // Record count
             const recordCount = request.record_count || (records ? records.length : 0);
             document.getElementById('view-record-count').textContent = `${recordCount} record(s)`;
@@ -865,6 +1153,88 @@ ALTER TABLE `disposal_request_details`
         function closeViewModal() {
             document.getElementById('view-request-modal').style.display = 'none';
             document.body.style.overflow = 'auto';
+            currentRequestId = null;
+        }
+
+        // ========== APPROVE/DECLINE FUNCTIONS ==========
+        async function approveRequest() {
+            if (!currentRequestId) return;
+
+            const approveBtn = document.getElementById('approve-btn');
+            const declineBtn = document.getElementById('decline-btn');
+
+            if (!confirm('Are you sure you want to approve this disposal request? This action cannot be undone.')) {
+                return;
+            }
+
+            approveBtn.innerHTML = '<i class="bx bx-loader-circle bx-spin" style="color:#ffffff"></i> Approving...';
+            approveBtn.disabled = true;
+            declineBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('request_id', currentRequestId);
+                formData.append('action_type', 'approve');
+
+                const response = await fetch('<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Close modal and reload page
+                    closeViewModal();
+                    window.location.reload();
+                } else {
+                    throw new Error('Failed to approve request');
+                }
+            } catch (error) {
+                console.error('Error approving request:', error);
+                alert('Failed to approve request: ' + error.message);
+                approveBtn.innerHTML = '<i class="bx bx-check" style="color:#ffffff"></i>Approve Request';
+                approveBtn.disabled = false;
+                declineBtn.disabled = false;
+            }
+        }
+
+        async function declineRequest() {
+            if (!currentRequestId) return;
+
+            const approveBtn = document.getElementById('approve-btn');
+            const declineBtn = document.getElementById('decline-btn');
+
+            if (!confirm('Are you sure you want to decline this disposal request? This action cannot be undone.')) {
+                return;
+            }
+
+            declineBtn.innerHTML = '<i class="bx bx-loader-circle bx-spin" style="color:#ffffff"></i> Declining...';
+            approveBtn.disabled = true;
+            declineBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('request_id', currentRequestId);
+                formData.append('action_type', 'decline');
+
+                const response = await fetch('<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Close modal and reload page
+                    closeViewModal();
+                    window.location.reload();
+                } else {
+                    throw new Error('Failed to decline request');
+                }
+            } catch (error) {
+                console.error('Error declining request:', error);
+                alert('Failed to decline request: ' + error.message);
+                declineBtn.innerHTML = '<i class="bx bx-x" style="color:#ffffff"></i> Decline Request';
+                approveBtn.disabled = false;
+                declineBtn.disabled = false;
+            }
         }
 
         function printRequest() {
@@ -899,7 +1269,7 @@ ALTER TABLE `disposal_request_details`
                         .status-pending { background-color: #fff3cd; color: #856404; }
                         .status-approved { background-color: #d4edda; color: #155724; }
                         .status-rejected { background-color: #f8d7da; color: #721c24; }
-                        .status-completed { background-color: #d1ecf1; color: #0c5460; }
+                        .status-disposed { background-color: #d1ecf1; color: #0c5460; }
                         .disposition-dispose { background-color: #f8d7da; color: #721c24; }
                         .disposition-archive { background-color: #d4edda; color: #155724; }
                         .print-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 0.9em; }
@@ -1000,4 +1370,5 @@ ALTER TABLE `disposal_request_details`
         });
     </script>
 </body>
+
 </html>

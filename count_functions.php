@@ -14,57 +14,55 @@ function getRecordCounts($pdo)
     ];
 
     try {
-        // Count active files (records with status = 'Active')
+        // 1. Active Records - status = 'Active'
         $active_query = "SELECT COUNT(*) as count FROM records WHERE status = 'Active'";
         $active_stmt = $pdo->query($active_query);
         $counts['active_files'] = $active_stmt->fetch()['count'];
 
-        // Count archived files (records with status = 'Archived')
-        $archived_query = "SELECT COUNT(*) as count FROM records WHERE status = 'Archived'";
+        // 2. Archived - status = 'archived' (lowercase)
+        $archived_query = "SELECT COUNT(*) as count FROM records WHERE status = 'archived'";
         $archived_stmt = $pdo->query($archived_query);
         $counts['archived'] = $archived_stmt->fetch()['count'];
 
-        // Count files for disposal (records eligible for disposal based on schedule)
-        $disposal_query = "
-            SELECT COUNT(DISTINCT r.record_id) as count 
-            FROM records r 
-            INNER JOIN disposal_schedule ds ON r.record_id = ds.record_id 
-            WHERE ds.status IN ('Pending', 'For Review') 
-            AND ds.schedule_date <= CURDATE()
-            AND r.status = 'Active'
-        ";
-        $disposal_stmt = $pdo->query($disposal_query);
-        $counts['for_disposal'] = $disposal_stmt->fetch()['count'];
+        // 3. Disposed - status = 'disposed' (lowercase)
+        $disposed_query = "SELECT COUNT(*) as count FROM records WHERE status = 'disposed'";
+        $disposed_stmt = $pdo->query($disposed_query);
+        $counts['for_disposal'] = $disposed_stmt->fetch()['count'];
 
-        // Count pending archive requests
-        $table_exists = $pdo->query("SHOW TABLES LIKE 'archive_requests'")->rowCount() > 0;
-        
-        if ($table_exists) {
-            // If requests table exists, count actual pending requests
-            $pending_query = "
-                SELECT COUNT(*) as count 
-                FROM archive_requests 
-                WHERE status = 'Pending'
-            ";
-        } else {
-            // Fallback: count records due for archive based on retention period
-            $pending_query = "
-                SELECT COUNT(*) as count 
-                FROM records 
-                WHERE status = 'Active' 
-                AND disposition_type = 'Archive'
-                AND DATE_ADD(date_created, INTERVAL retention_period YEAR) <= CURDATE()
-            ";
-        }
-        
-        $pending_stmt = $pdo->query($pending_query);
-        $counts['pending_request'] = $pending_stmt->fetch()['count'];
+        // 4. Pending Request - from disposal_requests table (case-insensitive check)
+        $counts['pending_request'] = getPendingDisposalRequestCount($pdo);
 
     } catch (Exception $e) {
         error_log("Error getting record counts: " . $e->getMessage());
     }
 
     return $counts;
+}
+
+/**
+ * Get count of pending disposal requests (case-insensitive)
+ */
+function getPendingDisposalRequestCount($pdo)
+{
+    $count = 0;
+    
+    try {
+        // Check if disposal_requests table exists (plural with 's')
+        $table_exists = $pdo->query("SHOW TABLES LIKE 'disposal_requests'")->rowCount() > 0;
+        
+        if ($table_exists) {
+            // Case-insensitive query to handle 'pending', 'Pending', 'PENDING', etc.
+            $pending_query = "SELECT COUNT(*) as count FROM disposal_requests WHERE LOWER(status) = 'pending'";
+            $pending_stmt = $pdo->query($pending_query);
+            $result = $pending_stmt->fetch();
+            $count = $result ? $result['count'] : 0;
+        }
+        
+    } catch (Exception $e) {
+        error_log("Error getting pending disposal request count: " . $e->getMessage());
+    }
+    
+    return $count;
 }
 
 /**
@@ -209,15 +207,14 @@ function getRecentArchiveRequests($pdo)
         foreach ($grouped_results as $row) {
             if ($table_exists) {
                 $request_code = 'AR-' . str_pad($row['request_id'], 3, '0', STR_PAD_LEFT);
-                $status_badge = $row['status'] == 'Pending' ? /*' <span style="color: orange;">(Pending)</span>'*/ : '';
+                $status_badge = $row['status'] == 'Pending' ? '' : ''; // You can add styling back if needed
             } else {
                 $request_code = 'AR-' . str_pad($row['record_id'], 3, '0', STR_PAD_LEFT);
-                // $status_badge = ' <span style="color: gray;">(Auto)</span>';
             }
             
             $requests[] = [
                 'code' => $request_code,
-                'details' => date('m/d/Y', strtotime($row['request_date'])) . ' - ' . $row['requested_by'] . $status_badge,
+                'details' => date('m/d/Y', strtotime($row['request_date'])) . ' - ' . $row['requested_by'],
                 'record_title' => $row['record_title'],
                 'files' => $row['files']
             ];
@@ -249,12 +246,12 @@ function getOfficeRecordCounts($pdo, $office_id)
         $counts['office_active'] = $stmt->fetch()['count'];
 
         // Count archived files for specific office
-        $archived_query = "SELECT COUNT(*) as count FROM records WHERE status = 'Archived' AND office_id = ?";
+        $archived_query = "SELECT COUNT(*) as count FROM records WHERE status = 'archived' AND office_id = ?";
         $stmt = $pdo->prepare($archived_query);
         $stmt->execute([$office_id]);
         $counts['office_archived'] = $stmt->fetch()['count'];
 
-        // Count files for disposal for specific office
+        // Count files for disposal for specific office (from disposal_schedule table)
         $disposal_query = "
             SELECT COUNT(DISTINCT r.record_id) as count 
             FROM records r 
@@ -325,4 +322,3 @@ function getRecordFiles($pdo, $record_id)
     
     return $files;
 }
-?>

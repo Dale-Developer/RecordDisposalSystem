@@ -69,10 +69,12 @@ if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
           <div class="status-line indigo"></div>
           <div class="card-content">
             <div class="data-text">
-              <p class="label">FOR DISPOSAL</p>
+              <p class="label">DISPOSED</p>
               <p class="value"><?php echo number_format($counts['for_disposal']); ?></p>
             </div>
-            <i class="fas fa-file-export icon"></i>
+            <!-- <i class="fas fa-file-export icon"></i> -->
+            <i class='fas fa-solid fa-trash-can icon'></i>
+            
           </div>
         </div>
 
@@ -138,7 +140,7 @@ if ($_SESSION['role_id'] == 4 && isset($_SESSION['office_id'])) {
 
         <!-- Recent Archive Request Section -->
         <div class="card recent-tasks">
-          <h2 class="section-title">Recent Archive Request</h2>
+          <h2 class="section-title">Recent Disposal Request</h2>
           <div class="task-list">
             <?php if (empty($recent_requests)): ?>
               <div class="task-item">
