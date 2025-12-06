@@ -90,6 +90,7 @@ try {
             r.disposition_type,
             r.status,
             r.time_value,
+            rc.class_id,
             rc.class_name,
             rc.functional_category,
             u.first_name,
@@ -316,6 +317,11 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
     .filter-button.active {
       background: #1f366c !important;
       color: white !important;
+      border-color: #1f366c !important;
+    }
+
+    .filter-button {
+      transition: all 0.3s ease;
     }
 
     #recordsTableBody tr {
@@ -514,7 +520,8 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
             <?php else: ?>
               <?php foreach ($records as $record): ?>
                 <tr data-record-id="<?= $record['record_id'] ?>"
-                  data-office-name="<?= htmlspecialchars($record['office_name']) ?>">
+                  data-office-name="<?= htmlspecialchars($record['office_name']) ?>"
+                  data-class-id="<?= $record['class_id'] ?>">
                   <td><?= htmlspecialchars($record['record_series_code'] ?? 'N/A') ?></td>
                   <td><?= htmlspecialchars($record['record_series_title']) ?></td>
                   <td><?= htmlspecialchars($record['office_name']) ?></td>
@@ -1002,7 +1009,7 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
   <!-- Add Select2 JS -->
   <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-  <!-- COMPLETE JAVASCRIPT CODE WITH FIXED VALIDATION -->
+  <!-- COMPLETE JAVASCRIPT CODE WITH FIXED VALIDATION AND FILTERS -->
   <script>
     // --- Element References ---
     const recordFormModal = document.getElementById('recordModal');
@@ -2034,46 +2041,104 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       let visibleCount = 0;
 
       rows.forEach(row => {
+        // Skip the "no records" row if it exists
         if (row.querySelector('td[colspan="9"]')) {
           return;
         }
 
         let showRow = true;
 
-        if (searchTerm) {
+        // Search filter (record title, series code, and office name)
+        if (searchTerm && showRow) {
           const recordTitle = row.cells[1].textContent.toLowerCase();
           const recordCode = row.cells[0].textContent.toLowerCase();
-          if (!recordTitle.includes(searchTerm) && !recordCode.includes(searchTerm)) {
+          const officeName = row.cells[2].textContent.toLowerCase();
+          
+          if (!recordTitle.includes(searchTerm) && 
+              !recordCode.includes(searchTerm) && 
+              !officeName.includes(searchTerm)) {
             showRow = false;
           }
         }
 
+        // Department filter
         if (department && showRow) {
-          const officeName = row.getAttribute('data-office-name');
-          const departmentText = document.getElementById('departmentSelect').options[document.getElementById('departmentSelect').selectedIndex].text;
-          if (officeName !== departmentText) {
+          const departmentOption = document.getElementById('departmentSelect').options[document.getElementById('departmentSelect').selectedIndex];
+          const officeCellText = row.cells[2].textContent.trim();
+          if (departmentOption.text !== officeCellText) {
             showRow = false;
           }
         }
 
+        // Status filter
         if (status && showRow) {
           const statusBadge = row.cells[7].querySelector('.badge');
-          if (statusBadge && statusBadge.textContent.toLowerCase() !== status) {
+          if (statusBadge) {
+            const rowStatus = statusBadge.textContent.toLowerCase();
+            if (rowStatus !== status.toLowerCase()) {
+              showRow = false;
+            }
+          } else {
             showRow = false;
           }
         }
 
+        // Time Value filter
         if (timeValue && showRow) {
           const timeValueBadge = row.cells[5].querySelector('.time-value-badge');
-          if (timeValueBadge && timeValueBadge.textContent !== timeValue) {
+          if (timeValueBadge) {
+            if (timeValueBadge.textContent !== timeValue) {
+              showRow = false;
+            }
+          } else if (timeValue !== '') {
+            // If timeValue filter is set but cell has "N/A"
             showRow = false;
           }
         }
 
+        // Disposition filter
         if (disposition && showRow) {
-          const dispositionCell = row.cells[6].textContent;
+          const dispositionCell = row.cells[6].textContent.trim();
           if (dispositionCell !== disposition) {
             showRow = false;
+          }
+        }
+
+        // Classification filter (using data attribute on rows)
+        if (classification && showRow) {
+          const classId = row.getAttribute('data-class-id');
+          if (classId !== classification) {
+            showRow = false;
+          }
+        }
+
+        // Date range filters
+        if ((dateFrom || dateTo) && showRow) {
+          const dateRangeText = row.cells[3].textContent.trim();
+          const dates = dateRangeText.split(' - ');
+          
+          if (dates.length === 2) {
+            try {
+              // Parse dates from display format (MM/DD/YYYY)
+              const fromDate = dates[0] !== 'N/A' ? parseDateString(dates[0]) : null;
+              const toDate = dates[1] !== 'N/A' ? parseDateString(dates[1]) : null;
+              
+              if (dateFrom) {
+                const filterFromDate = new Date(dateFrom);
+                if (toDate && toDate < filterFromDate) {
+                  showRow = false;
+                }
+              }
+              
+              if (dateTo && showRow) {
+                const filterToDate = new Date(dateTo);
+                if (fromDate && fromDate > filterToDate) {
+                  showRow = false;
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing dates:', e);
+            }
           }
         }
 
@@ -2081,34 +2146,47 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
         if (showRow) visibleCount++;
       });
 
+      // Update filter button appearance
       const filterButton = document.querySelector('.filter-button');
       const hasActiveFilters = searchTerm || department || classification || disposition || status || timeValue || dateFrom || dateTo;
 
       if (hasActiveFilters) {
-        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-        filterButton.style.background = '#1f366c';
-        filterButton.style.color = 'white';
+        filterButton.classList.add('active');
+        filterButton.innerHTML = `Filter <i class='bx bx-filter'></i> (${visibleCount})`;
       } else {
-        filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-        filterButton.style.background = '';
-        filterButton.style.color = '';
+        filterButton.classList.remove('active');
+        filterButton.innerHTML = `Filter <i class='bx bx-filter'></i>`;
       }
 
-      const noRecordsRow = document.querySelector('#recordsTableBody tr td[colspan="9"]');
+      // Handle no results
+      const tbody = document.getElementById('recordsTableBody');
+      const noRecordsRow = tbody.querySelector('tr td[colspan="9"]');
+      
       if (visibleCount === 0) {
-        if (!noRecordsRow) {
-          const tbody = document.getElementById('recordsTableBody');
+        if (!noRecordsRow || !noRecordsRow.textContent.includes('match your filters')) {
           tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #78909c;">No records match your filters.</td></tr>`;
         }
       } else if (noRecordsRow && noRecordsRow.textContent.includes('match your filters')) {
+        // Remove the no records message if there are results
         location.reload();
       }
 
       hideFilterModal();
-      showToast('Filters applied successfully');
+      showToast(`Filters applied. Showing ${visibleCount} record(s).`);
+    }
+
+    // Helper function to parse date strings
+    function parseDateString(dateStr) {
+      // Handle MM/DD/YYYY format
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        return new Date(parts[2], parts[0] - 1, parts[1]);
+      }
+      return null;
     }
 
     function clearFilters() {
+      // Clear all filter inputs
       document.getElementById('searchInput').value = '';
       document.getElementById('departmentSelect').value = '';
       document.getElementById('classificationSelect').value = '';
@@ -2118,16 +2196,20 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       document.getElementById('dateFromInput').value = '';
       document.getElementById('dateToInput').value = '';
 
+      // Show all rows
       const rows = document.querySelectorAll('#recordsTableBody tr');
       rows.forEach(row => {
         row.style.display = '';
       });
 
+      // Reset filter button
       const filterButton = document.querySelector('.filter-button');
-      filterButton.innerHTML = `Filter <i class='bx bx-edit'></i>`;
-      filterButton.style.background = '';
-      filterButton.style.color = '';
+      filterButton.classList.remove('active');
+      filterButton.innerHTML = `Filter <i class='bx bx-filter'></i>`;
 
+      // Reload table to get original data
+      location.reload();
+      
       hideFilterModal();
       showToast('Filters cleared');
     }
