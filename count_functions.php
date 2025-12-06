@@ -66,30 +66,71 @@ function getPendingDisposalRequestCount($pdo)
 }
 
 /**
- * Get records due for archive (only records due exactly one day before archive date)
+ * Get records due for archive tomorrow (records whose retention period ends tomorrow)
+ * CORRECTED VERSION - This will show records that end their retention period tomorrow
  */
 function getRecordsDueForArchive($pdo)
 {
     $records = [];
 
     try {
-        $query = "
-            SELECT 
-                r.record_id,
-                r.record_title,
-                o.office_name,
-                DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) as due_date,
-                'due tomorrow' as action
-            FROM records r
-            INNER JOIN offices o ON r.office_id = o.office_id
-            WHERE r.status = 'Active' 
-            AND r.disposition_type = 'Archive'
-            AND DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-            ORDER BY due_date ASC 
-            LIMIT 15
-        ";
-        $stmt = $pdo->query($query);
+        // Set timezone first
+        date_default_timezone_set('Asia/Manila');
+        
+        // Get tomorrow's date in YYYY-MM-DD format
+        $tomorrow = date('Y-m-d', strtotime('+1 day'));
+        
+        // For debugging: Log what we're looking for
+        error_log("[Archive Check] Looking for records with retention ending on: " . $tomorrow);
+        
+        // FIRST: Check if we have a direct retention_period_end field
+        $fields_query = $pdo->query("DESCRIBE records");
+        $fields = $fields_query->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (in_array('retention_period_end', $fields)) {
+            // Option A: Use direct retention_period_end field
+            error_log("[Archive Check] Using retention_period_end field");
+            $query = "
+                SELECT 
+                    r.record_id,
+                    r.record_title,
+                    o.office_name,
+                    r.retention_period_end,
+                    'Due for Archive Tomorrow' as action
+                FROM records r
+                INNER JOIN offices o ON r.office_id = o.office_id
+                WHERE r.status = 'Active' 
+                AND DATE(r.retention_period_end) = ?
+                AND r.retention_period_end IS NOT NULL
+                ORDER BY r.retention_period_end ASC 
+                LIMIT 15
+            ";
+        } else {
+            // Option B: Calculate from date_created + retention_period
+            error_log("[Archive Check] Calculating from date_created + retention_period");
+            $query = "
+                SELECT 
+                    r.record_id,
+                    r.record_title,
+                    o.office_name,
+                    DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR) as retention_period_end,
+                    'Due for Archive Tomorrow' as action
+                FROM records r
+                INNER JOIN offices o ON r.office_id = o.office_id
+                WHERE r.status = 'Active' 
+                AND DATE(DATE_ADD(r.date_created, INTERVAL r.retention_period YEAR)) = ?
+                AND r.retention_period IS NOT NULL
+                ORDER BY retention_period_end ASC 
+                LIMIT 15
+            ";
+        }
+        
+        $stmt = $pdo->prepare($query);
+        $stmt->execute([$tomorrow]);
         $results = $stmt->fetchAll();
+        
+        // Log how many records were found
+        error_log("[Archive Check] Found " . count($results) . " records due for archive tomorrow");
 
         foreach ($results as $row) {
             // Get file information for this record
@@ -107,7 +148,8 @@ function getRecordsDueForArchive($pdo)
                 'record_id' => $row['record_id'],
                 'record_title' => $row['record_title'],
                 'office_name' => $row['office_name'],
-                'due_date' => $row['due_date'],
+                'retention_period_end' => $row['retention_period_end'],
+                'due_date' => $row['retention_period_end'],
                 'action' => $row['action'],
                 'files' => $files
             ];
@@ -207,7 +249,6 @@ function getRecentArchiveRequests($pdo)
         foreach ($grouped_results as $row) {
             if ($table_exists) {
                 $request_code = 'AR-' . str_pad($row['request_id'], 3, '0', STR_PAD_LEFT);
-                $status_badge = $row['status'] == 'Pending' ? '' : ''; // You can add styling back if needed
             } else {
                 $request_code = 'AR-' . str_pad($row['record_id'], 3, '0', STR_PAD_LEFT);
             }
@@ -322,3 +363,46 @@ function getRecordFiles($pdo, $record_id)
     
     return $files;
 }
+
+/**
+ * Get all disposal requests
+ */
+function getAllDisposalRequests($pdo)
+{
+    $requests = [];
+
+    try {
+        // First check if disposal_request table exists (singular)
+        $table_exists_singular = $pdo->query("SHOW TABLES LIKE 'disposal_request'")->rowCount() > 0;
+        
+        // Also check if disposal_requests table exists (plural)
+        $table_exists_plural = $pdo->query("SHOW TABLES LIKE 'disposal_requests'")->rowCount() > 0;
+        
+        if ($table_exists_singular) {
+            $table_name = 'disposal_request';
+        } elseif ($table_exists_plural) {
+            $table_name = 'disposal_requests';
+        } else {
+            // Neither table exists
+            error_log("Neither disposal_request nor disposal_requests table found");
+            return $requests;
+        }
+        
+        $query = "SELECT request_id, status FROM $table_name ORDER BY request_id DESC";
+        $stmt = $pdo->query($query);
+        $results = $stmt->fetchAll();
+
+        foreach ($results as $row) {
+            $requests[] = [
+                'request_id' => $row['request_id'],
+                'status' => $row['status']
+            ];
+        }
+
+    } catch (Exception $e) {
+        error_log("Error getting disposal requests: " . $e->getMessage());
+    }
+
+    return $requests;
+}
+?>

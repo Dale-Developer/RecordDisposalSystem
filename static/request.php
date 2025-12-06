@@ -580,7 +580,7 @@ try {
                                     </td>
                                     <td style="width: 1%; white-space: nowrap;">
                                         <span class="status-badge status-<?php echo strtolower($request['status']); ?>">
-                                            <i class='bx bx-circle' style="font-size: 0.6rem; margin-right: 4px;"></i>
+                                            <!-- <i class='bx bx-circle' style="font-size: 0.6rem; margin-right: 4px;"></i> -->
                                             <?php echo $request['status']; ?>
                                         </span>
                                     </td>
