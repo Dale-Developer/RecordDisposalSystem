@@ -4,34 +4,24 @@ require_once '../db_connect.php';
 
 // ========== AUTO-UPDATE EXPIRED RECORDS ==========
 // This runs EVERY TIME the page loads - SIMPLEST & FASTEST
+// ========== AUTO-UPDATE EXPIRED RECORDS ==========
 $current_date = date('Y-m-d');
 
 try {
-    // Update records past period_to to Archived
-    $update_archive_sql = "UPDATE records 
-                           SET status = 'Archived' 
-                           WHERE status IN ('Active', 'Inactive') 
-                           AND period_to IS NOT NULL 
-                           AND period_to < :current_date";
+    // CORRECT LOGIC: Archive records where period_to has passed (is overdue)
+    // Only update records that are currently Active or Inactive
+    // Update to Archived status when period_to is in the past
+    $update_sql = "UPDATE records 
+                   SET status = 'Archived' 
+                   WHERE status IN ('Active', 'Inactive') 
+                   AND period_to IS NOT NULL 
+                   AND DATE(period_to) <= :current_date";
     
-    $update_stmt = $pdo->prepare($update_archive_sql);
+    $update_stmt = $pdo->prepare($update_sql);
     $update_stmt->execute(['current_date' => $current_date]);
     $archived_count = $update_stmt->rowCount();
     
-    // Optional: Update records past total retention to Scheduled for Disposal
-    // Comment out if you only want to archive based on period_to
-    $update_disposal_sql = "UPDATE records 
-                            SET status = 'Scheduled for Disposal' 
-                            WHERE status IN ('Active', 'Inactive')
-                            AND total_years > 0
-                            AND period_from IS NOT NULL
-                            AND DATE_ADD(period_from, INTERVAL total_years YEAR) < :current_date";
-    
-    $update_disposal_stmt = $pdo->prepare($update_disposal_sql);
-    $update_disposal_stmt->execute(['current_date' => $current_date]);
-    $disposal_count = $update_disposal_stmt->rowCount();
-    
-    $total_updated = $archived_count + $disposal_count;
+    $total_updated = $archived_count;
     
     // Store in session to show notification (optional)
     if ($total_updated > 0) {
@@ -43,6 +33,7 @@ try {
     // Silently fail - don't break the page if update fails
     error_log("Auto-update error: " . $e->getMessage());
 }
+// ========== END AUTO-UPDATE ==========
 // ========== END AUTO-UPDATE ==========
 
 // Initialize variables

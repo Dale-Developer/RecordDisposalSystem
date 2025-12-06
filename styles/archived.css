@@ -38,27 +38,40 @@ main {
   border: 1px solid #d0d0d0;
   background: white;
   cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.filter-btn:hover {
+  background: #f5f5f5;
 }
 
 /* ---------- FLEX VERSION ---------- */
 .folder-grid {
   display: flex;
-  flex-wrap: wrap;       /* allow wrapping like grid */
-  gap: 25px;             /* same spacing as grid */
+  flex-wrap: wrap;
+  gap: 25px;
 }
 
 .folder {
-  width: 200px;          /* matches minmax(160px) */
+  width: 200px;
   display: flex;
   flex-direction: column;
   align-items: center;
   cursor: pointer;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  text-align: center;
 }
 
 .folder-icon {
   font-size: 150px;
-  color: #d5d9e5;        /* default folder color */
+  color: #d5d9e5;
   transition: 0.2s ease;
+  margin-bottom: 0.75rem;
 }
 
 .folder p {
@@ -66,14 +79,360 @@ main {
   font-size: 14px;
   text-align: center;
   color: #454545;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.folder small {
+  display: block;
+  color: #666;
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 /* Selected folder style */
+.folder.selected {
+  background: #e8f0fe;
+  border-color: #2460C6;
+}
+
 .folder.selected .folder-icon {
   color: #2460C6;
 }
 
 /* Hover effect */
+.folder:hover {
+  border-color: #2460C6;
+  transform: translateY(-5px);
+  box-shadow: 0 4px 20px rgba(36, 96, 198, 0.15);
+}
+
 .folder:hover .folder-icon {
   filter: brightness(0.9);
+}
+
+/* Filter Panel Styles */
+.filter-panel {
+  display: none;
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
+  position: absolute;
+  top: 80px;
+  right: 20px;
+  z-index: 100;
+  min-width: 300px;
+  border: 1px solid #d0d0d0;
+}
+
+.filter-panel.show {
+  display: block;
+}
+
+.filter-group {
+  margin-bottom: 1rem;
+}
+
+.filter-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #454545;
+  font-size: 0.9rem;
+}
+
+.filter-group select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.filter-group select:focus {
+  outline: none;
+  border-color: #2460C6;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.filter-actions button {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.filter-actions .apply-btn {
+  background: #2460C6;
+  color: white;
+}
+
+.filter-actions .apply-btn:hover {
+  background: #1a4da0;
+}
+
+.filter-actions .reset-btn {
+  background: #f0f0f0;
+  color: #454545;
+  border: 1px solid #d0d0d0;
+}
+
+.filter-actions .reset-btn:hover {
+  background: #e0e0e0;
+}
+
+/* Records Container */
+.records-container {
+  display: none;
+  margin-top: 2rem;
+}
+
+.records-container.show {
+  display: block;
+}
+
+.records-container .header {
+  margin-bottom: 1.5rem;
+}
+
+.records-container h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #454545;
+}
+
+.back-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+  background: #5a6268;
+}
+
+/* Records Table Styles */
+.card.dashboard-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  overflow: hidden;
+  border: 1px solid #e0e0e0;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1000px;
+}
+
+thead {
+  background: #f8f9fa;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+td {
+  padding: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+tbody tr:hover {
+  background: #f8f9fa;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Badge styles */
+.badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-block;
+  text-align: center;
+  min-width: 80px;
+}
+
+.badge.archived {
+  background: #6c757d;
+  color: white;
+}
+
+.badge.active {
+  background: #28a745;
+  color: white;
+}
+
+.badge.disposed {
+  background: #dc3545;
+  color: white;
+}
+
+.badge.pending {
+  background: #ffc107;
+  color: #333;
+}
+
+.time-value-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: inline-block;
+  text-align: center;
+  min-width: 80px;
+}
+
+.time-value-badge.permanent {
+  background: #28a745;
+  color: white;
+}
+
+.time-value-badge.temporary {
+  background: #ffc107;
+  color: #333;
+}
+
+/* No records message */
+.no-records {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.no-records i {
+  font-size: 3rem;
+  color: #ccc;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.no-records h3 {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+  color: #454545;
+}
+
+.no-records p {
+  font-size: 0.95rem;
+  opacity: 0.8;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  main {
+    margin: 65px 0 0 0;
+  }
+  
+  .container {
+    padding: 0 1rem;
+  }
+  
+  body {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 768px) {
+  .folder-grid {
+    gap: 15px;
+    justify-content: center;
+  }
+  
+  .folder {
+    width: 160px;
+    padding: 1rem;
+  }
+  
+  .folder-icon {
+    font-size: 120px;
+  }
+  
+  .header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+  
+  .header h2 {
+    font-size: 1.5rem;
+  }
+  
+  .filter-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 400px;
+  }
+  
+  table {
+    font-size: 0.85rem;
+  }
+  
+  th, td {
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .folder-grid {
+    gap: 10px;
+  }
+  
+  .folder {
+    width: 140px;
+    padding: 0.75rem;
+  }
+  
+  .folder-icon {
+    font-size: 100px;
+  }
+  
+  .folder p {
+    font-size: 0.85rem;
+  }
+  
+  .folder small {
+    font-size: 0.75rem;
+  }
 }
