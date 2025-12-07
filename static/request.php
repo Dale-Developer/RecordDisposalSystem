@@ -2,11 +2,13 @@
 require_once '../session.php';
 require_once '../db_connect.php';
 
+
 // Check database connection
 if (!isset($pdo)) {
     die("Database connection not established");
 }
-
+$user_role = $_SESSION['role_id'] ?? 0;
+$is_admin = ($user_role == 1); // Admin = role_id 1
 // Check if disposal_request_details table exists
 $tableCheck = $pdo->query("SHOW TABLES LIKE 'disposal_request_details'");
 $tableExists = $tableCheck->rowCount() > 0;
@@ -494,27 +496,27 @@ try {
                 <i class='bx bx-error-circle'></i>
                 Database setup required. Please run this SQL in your database:
                 <pre style="background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 4px; overflow: auto;">
-    -- 1. First drop the foreign key constraint
-    ALTER TABLE `disposal_requests` DROP FOREIGN KEY `disposal_requests_ibfk_1`;
+                    -- 1. First drop the foreign key constraint
+                    ALTER TABLE `disposal_requests` DROP FOREIGN KEY `disposal_requests_ibfk_1`;
 
-    -- 2. Then drop the column
-    ALTER TABLE `disposal_requests` DROP COLUMN `record_id`;
+                    -- 2. Then drop the column
+                    ALTER TABLE `disposal_requests` DROP COLUMN `record_id`;
 
-    -- 3. Create disposal_request_details table
-    CREATE TABLE IF NOT EXISTS `disposal_request_details` (
-      `disposal_detail_id` int(11) NOT NULL AUTO_INCREMENT,
-      `request_id` int(11) NOT NULL,
-      `record_id` int(11) NOT NULL,
-      PRIMARY KEY (`disposal_detail_id`),
-      UNIQUE KEY `unique_disposal_request_record` (`request_id`,`record_id`),
-      KEY `record_id` (`record_id`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+                    -- 3. Create disposal_request_details table
+                    CREATE TABLE IF NOT EXISTS `disposal_request_details` (
+                      `disposal_detail_id` int(11) NOT NULL AUTO_INCREMENT,
+                      `request_id` int(11) NOT NULL,
+                      `record_id` int(11) NOT NULL,
+                      PRIMARY KEY (`disposal_detail_id`),
+                      UNIQUE KEY `unique_disposal_request_record` (`request_id`,`record_id`),
+                      KEY `record_id` (`record_id`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-    -- 4. Add foreign key constraints
-    ALTER TABLE `disposal_request_details`
-      ADD CONSTRAINT `disposal_request_details_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `disposal_requests` (`request_id`) ON DELETE CASCADE,
-      ADD CONSTRAINT `disposal_request_details_ibfk_2` FOREIGN KEY (`record_id`) REFERENCES `records` (`record_id`);
-                    </pre>
+                    -- 4. Add foreign key constraints
+                    ALTER TABLE `disposal_request_details`
+                      ADD CONSTRAINT `disposal_request_details_ibfk_1` FOREIGN KEY (`request_id`) REFERENCES `disposal_requests` (`request_id`) ON DELETE CASCADE,
+                      ADD CONSTRAINT `disposal_request_details_ibfk_2` FOREIGN KEY (`record_id`) REFERENCES `records` (`record_id`);
+                                    </pre>
             </div>
         <?php endif; ?>
 
@@ -777,6 +779,7 @@ try {
         </div>
 
         <!-- VIEW REQUEST MODAL -->
+        <!-- VIEW REQUEST MODAL -->
         <div id="view-request-modal" class="disposal-modal-overlay">
             <div class="disposal-modal-content">
                 <div class="disposal-modal-header">
@@ -886,21 +889,20 @@ try {
 
                 <div class="modal-footer">
                     <div class="modal-footer-left">
-                        <!-- <button type="button" class="btn btn-cancel" onclick="closeViewModal()">
-                            <i class='bx bx-x' style="margin-right: 8px;"></i> Close
-                        </button> -->
                         <button type="button" class="btn btn-submit" onclick="printRequest()">
                             <i class='bx bx-printer' style="margin-right: 8px;"></i> Print Request
                         </button>
                     </div>
-                    <div class="modal-footer-right">
-                        <button type="button" class="btn approve" id="approve-btn" onclick="approveRequest()">
-                            <i class='bx bx-check' style='color:#ffffff'></i>Approve Request
-                        </button>
-                        <button type="button" class="btn decline" id="decline-btn" onclick="declineRequest()">
-                            <i class='bx bx-x' style='color:#ffffff'></i> Decline Request
-                        </button>
-                    </div>
+                    <?php if ($is_admin): ?>
+                        <div class="modal-footer-right">
+                            <button type="button" class="btn approve" id="approve-btn" onclick="approveRequest()">
+                                <i class='bx bx-check' style='color:#ffffff'></i>Approve Request
+                            </button>
+                            <button type="button" class="btn decline" id="decline-btn" onclick="declineRequest()">
+                                <i class='bx bx-x' style='color:#ffffff'></i> Decline Request
+                            </button>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -1045,11 +1047,15 @@ try {
             document.getElementById('view-loading').style.display = 'block';
             document.getElementById('view-content').style.display = 'none';
 
-            // Reset buttons
-            document.getElementById('approve-btn').disabled = false;
-            document.getElementById('decline-btn').disabled = false;
-            document.getElementById('approve-btn').innerHTML = '<i class="bx bx-check" style="color:#ffffff"></i>Approve Request';
-            document.getElementById('decline-btn').innerHTML = '<i class="bx bx-x" style="color:#ffffff"></i> Decline Request';
+            // Only reset buttons if they exist (admin users)
+            const approveBtn = document.getElementById('approve-btn');
+            const declineBtn = document.getElementById('decline-btn');
+            if (approveBtn && declineBtn) {
+                approveBtn.disabled = false;
+                declineBtn.disabled = false;
+                approveBtn.innerHTML = '<i class="bx bx-check" style="color:#ffffff"></i>Approve Request';
+                declineBtn.innerHTML = '<i class="bx bx-x" style="color:#ffffff"></i> Decline Request';
+            }
 
             try {
                 const response = await fetch(`../get_request_details.php?request_id=${requestId}&type=disposal`);
@@ -1066,13 +1072,13 @@ try {
             } catch (error) {
                 console.error('Error loading request details:', error);
                 document.getElementById('view-loading').innerHTML = `
-                    <div style="text-align: center; padding: 20px;">
-                        <i class='bx bx-error' style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
-                        <p style="color: #dc3545; font-size: 1.1rem;">Failed to load request details</p>
-                        <p style="color: #6c757d; font-size: 0.9rem;">${error.message}</p>
-                        <button onclick="closeViewModal()" style="margin-top: 20px; padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
-                    </div>
-                `;
+            <div style="text-align: center; padding: 20px;">
+                <i class='bx bx-error' style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
+                <p style="color: #dc3545; font-size: 1.1rem;">Failed to load request details</p>
+                <p style="color: #6c757d; font-size: 0.9rem;">${error.message}</p>
+                <button onclick="closeViewModal()" style="margin-top: 20px; padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+            </div>
+        `;
             }
         }
 
@@ -1101,19 +1107,23 @@ try {
             statusElement.className = 'form-input view-only status-badge';
             statusElement.classList.add(`status-${(request.status || 'pending').toLowerCase()}`);
 
-            // Enable/disable buttons based on status
+            // Check if admin buttons exist before trying to modify them
             const approveBtn = document.getElementById('approve-btn');
             const declineBtn = document.getElementById('decline-btn');
-            if (request.status === 'Pending') {
-                approveBtn.disabled = false;
-                declineBtn.disabled = false;
-            } else {
-                approveBtn.disabled = true;
-                declineBtn.disabled = true;
-                if (request.status === 'Approved') {
-                    approveBtn.innerHTML = '<i class="bx bx-check-circle" style="color:#ffffff"></i>Already Approved';
-                } else if (request.status === 'Rejected') {
-                    declineBtn.innerHTML = '<i class="bx bx-x-circle" style="color:#ffffff"></i>Already Rejected';
+
+            if (approveBtn && declineBtn) {
+                // Only update buttons if they exist (admin users)
+                if (request.status === 'Pending') {
+                    approveBtn.disabled = false;
+                    declineBtn.disabled = false;
+                } else {
+                    approveBtn.disabled = true;
+                    declineBtn.disabled = true;
+                    if (request.status === 'Approved') {
+                        approveBtn.innerHTML = '<i class="bx bx-check-circle" style="color:#ffffff"></i>Already Approved';
+                    } else if (request.status === 'Rejected') {
+                        declineBtn.innerHTML = '<i class="bx bx-x-circle" style="color:#ffffff"></i>Already Rejected';
+                    }
                 }
             }
 
@@ -1129,24 +1139,24 @@ try {
                 records.forEach(record => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${escapeHtml(record.record_series_code || 'N/A')}</td>
-                        <td>${escapeHtml(record.record_series_title || 'N/A')}</td>
-                        <td>${escapeHtml(record.office_name || 'N/A')}</td>
-                        <td>${escapeHtml(record.class_name || 'N/A')}</td>
-                        <td>${formatDate(record.period_from)} - ${formatDate(record.period_to)}</td>
-                        <td>${formatRetentionPeriod(record)}</td>
-                        <td><span class="disposition-tag disposition-${(record.disposition_type || 'dispose').toLowerCase()}">${record.disposition_type || 'Dispose'}</span></td>
-                        <td><span class="status-badge status-${(record.status || 'pending').toLowerCase()}">${record.status || 'Pending'}</span></td>
-                    `;
+                <td>${escapeHtml(record.record_series_code || 'N/A')}</td>
+                <td>${escapeHtml(record.record_series_title || 'N/A')}</td>
+                <td>${escapeHtml(record.office_name || 'N/A')}</td>
+                <td>${escapeHtml(record.class_name || 'N/A')}</td>
+                <td>${formatDate(record.period_from)} - ${formatDate(record.period_to)}</td>
+                <td>${formatRetentionPeriod(record)}</td>
+                <td><span class="disposition-tag disposition-${(record.disposition_type || 'dispose').toLowerCase()}">${record.disposition_type || 'Dispose'}</span></td>
+                <td><span class="status-badge status-${(record.status || 'pending').toLowerCase()}">${record.status || 'Pending'}</span></td>
+            `;
                     recordsTable.appendChild(row);
                 });
             } else {
                 recordsTable.innerHTML = `
-                    <tr><td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">
-                        <i class='bx bx-file-blank' style="font-size: 2rem; display: block; margin-bottom: 1rem;"></i>
-                        No records found for this request
-                    </td></tr>
-                `;
+            <tr><td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">
+                <i class='bx bx-file-blank' style="font-size: 2rem; display: block; margin-bottom: 1rem;"></i>
+                No records found for this request
+            </td></tr>
+        `;
             }
         }
 
@@ -1162,6 +1172,9 @@ try {
 
             const approveBtn = document.getElementById('approve-btn');
             const declineBtn = document.getElementById('decline-btn');
+
+            // Check if buttons exist (admin only)
+            if (!approveBtn || !declineBtn) return;
 
             if (!confirm('Are you sure you want to approve this disposal request? This action cannot be undone.')) {
                 return;
@@ -1203,6 +1216,9 @@ try {
             const approveBtn = document.getElementById('approve-btn');
             const declineBtn = document.getElementById('decline-btn');
 
+            // Check if buttons exist (admin only)
+            if (!approveBtn || !declineBtn) return;
+
             if (!confirm('Are you sure you want to decline this disposal request? This action cannot be undone.')) {
                 return;
             }
@@ -1236,7 +1252,6 @@ try {
                 declineBtn.disabled = false;
             }
         }
-
         function printRequest() {
             const printContent = document.getElementById('view-content').cloneNode(true);
             const requestId = document.getElementById('view-request-id').textContent;

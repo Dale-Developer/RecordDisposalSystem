@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'db_connect.php'; // This creates $pdo, not $conn
+require_once 'log_activity.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
@@ -32,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['office_id'] = $user['office_id'];
                     $_SESSION['logged_in'] = true;
 
+                    
                     // Redirect to dashboard
                     header("Location: ../Record_Disposal_System/static/dashboard.php");
                     exit();

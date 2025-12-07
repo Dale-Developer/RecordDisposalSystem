@@ -143,6 +143,7 @@ session_start();
         transform: translateX(100%);
         opacity: 0;
       }
+
       to {
         transform: translateX(0);
         opacity: 1;
@@ -158,6 +159,7 @@ session_start();
         transform: translateX(0);
         opacity: 1;
       }
+
       to {
         transform: translateX(100%);
         opacity: 0;
@@ -229,26 +231,33 @@ session_start();
               <select name="role_id" class="role-dropdown" id="roleSelect" required>
                 <option value="">Select Role</option>
                 <option value="1">Admin</option>
-                <option value="2">RMO</option>
-                <option value="3">Admin Staff</option>
-                <option value="4">Custodian</option>
+                <option value="2">Staff</option>
               </select>
             </div>
-
             <div class="input-group office-dropdown-container" id="officeDropdownContainer" style="display: none;">
               <i class='bx bxs-buildings'></i>
               <select name="office_id" class="office-dropdown" id="officeSelect">
                 <option value="">Select Department</option>
-                <option value="1">College of Computer Studies (CCS)</option>
-                <option value="2">College of Arts and Science</option>
-                <option value="3">College of Business Administration and Accountancy</option>
-                <option value="4">College of Criminal Justice Education</option>
-                <option value="5">College of Fisheries</option>
-                <option value="6">College of Food Nutrition and Dietetics</option>
-                <option value="7">College of International Hospitality and Tourism Management</option>
-                <option value="8">College of Teacher Education</option>
+                <option value="1">Board of Regents</option>
+                <option value="2">Board Secretary</option>
+                <option value="3">President Files</option>
+                <option value="4">Vice-President for Academic Affairs / Colleges</option>
+                <option value="5">Accounting</option>
+                <option value="6">Budgeting Services</option>
+                <option value="7">Business Affairs Office</option>
+                <option value="8">Human Resource Management Office</option>
+                <option value="9">Legal Unit</option>
+                <option value="10">Planning Office</option>
+                <option value="11">Quality Management System (ISO)</option>
+                <option value="12">Records Management Office</option>
+                <option value="13">Registrar's Office</option>
+                <option value="14">Scholarship and Financial Assistance Unit</option>
+                <option value="15">Supply Office</option>
+                <option value="16">University Health Service</option>
+                <option value="17">University Library</option>
               </select>
             </div>
+
 
             <button type="submit" value="Sign Up" name="signUp">Sign up</button>
 
@@ -264,7 +273,7 @@ session_start();
 
       <!-- SIGN IN -->
       <div class="col align-items-center flex-col sign-in">
-        <form class="form-wrapper align-items-center" method="POST" action="../login_process.php"> <!-- FIXED PATH -->
+        <form class="form-wrapper align-items-center" method="POST" action="../login_process.php">
           <div class="form sign-in">
 
             <div class="input-group">
@@ -351,12 +360,15 @@ session_start();
       if (roleSelect && officeContainer) {
         // Function to handle office dropdown visibility
         function updateOfficeDropdown() {
-          if (roleSelect.value === '4') {
+          // Show office dropdown for Staff role (value 2)
+          if (roleSelect.value === '2') {
             officeContainer.style.display = 'block';
-            console.log('Showing office dropdown');
+            document.getElementById('officeSelect').setAttribute('required', 'required');
+            console.log('Showing office dropdown for Staff');
           } else {
             officeContainer.style.display = 'none';
-            console.log('Hiding office dropdown');
+            document.getElementById('officeSelect').removeAttribute('required');
+            console.log('Hiding office dropdown for Admin');
           }
         }
 
@@ -387,7 +399,7 @@ session_start();
         // Close button functionality
         const closeBtn = alert.querySelector('.alert-close');
         if (closeBtn) {
-          closeBtn.addEventListener('click', function() {
+          closeBtn.addEventListener('click', function () {
             alert.classList.add('fade-out');
             setTimeout(() => {
               if (alert.parentNode) {
