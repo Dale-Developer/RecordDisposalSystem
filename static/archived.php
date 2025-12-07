@@ -641,10 +641,10 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       </div>
 
       <div class="actions">
-        <button class="button filter-button" onclick="showFilterModal()">
+        <!-- <button class="button filter-button" onclick="showFilterModal()">
           Filter
           <i class='bx bx-filter'></i>
-        </button>
+        </button> -->
       </div>
     </header>
     
