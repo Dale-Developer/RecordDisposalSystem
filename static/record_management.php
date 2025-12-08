@@ -838,8 +838,7 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
           <div class="upload-area" id="uploadArea">
             <i class="fas fa-cloud-upload-alt cloud-icon"></i>
             <p>Drag and Drop files here<br>-OR-</p>
-            <button type="button" class="browse-btn" onclick="document.getElementById('fileUpload').click();">Browse
-              Files</button>
+            <button type="button" class="browse-btn" onclick="event.preventDefault(); event.stopPropagation();">Browse Files</button>
             <input type="file" id="fileUpload" name="attachments[]" multiple style="display: none;"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif">
           </div>
@@ -1370,72 +1369,97 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
     }
 
     function initializeFileUpload() {
-      const uploadArea = document.getElementById('uploadArea');
-      const fileInput = document.getElementById('fileUpload');
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileUpload');
 
-      const newFileInput = fileInput.cloneNode(true);
-      fileInput.parentNode.replaceChild(newFileInput, fileInput);
+    // Store the original event handler if it exists
+    const originalOnChange = fileInput.onchange;
 
-      const currentFileInput = document.getElementById('fileUpload');
+    // Clear all existing event listeners by replacing the element
+    const newFileInput = fileInput.cloneNode(true);
+    newFileInput.value = ''; // Clear the value
+    fileInput.parentNode.replaceChild(newFileInput, fileInput);
 
-      currentFileInput.addEventListener('change', (e) => {
+    const currentFileInput = document.getElementById('fileUpload');
+
+    // Add single event listener for file selection
+    currentFileInput.addEventListener('change', function(e) {
         console.log('File input changed, files selected:', e.target.files.length);
-        handleFileSelect(e.target.files);
-        currentFileInput.value = '';
-      });
+        if (e.target.files.length > 0) {
+            handleFileSelect(e.target.files);
+            // Reset the input value to allow selecting the same file again
+            e.target.value = '';
+        }
+    }, { once: false }); // Make sure it's not a one-time listener
 
-      uploadArea.addEventListener('dragover', (e) => {
+    // Drag and drop handlers
+    uploadArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadArea.classList.add('drag-over');
-      });
+    });
 
-      uploadArea.addEventListener('dragleave', (e) => {
+    uploadArea.addEventListener('dragleave', (e) => {
         e.preventDefault();
         uploadArea.classList.remove('drag-over');
-      });
+    });
 
-      uploadArea.addEventListener('drop', (e) => {
+    uploadArea.addEventListener('drop', (e) => {
         e.preventDefault();
         uploadArea.classList.remove('drag-over');
         const files = e.dataTransfer.files;
         console.log('Files dropped:', files.length);
         handleFileSelect(files);
-      });
+    });
 
-      uploadArea.addEventListener('click', () => {
+    // Click handler for the upload area
+    uploadArea.addEventListener('click', (e) => {
+        // Prevent multiple clicks from bubbling
+        e.stopPropagation();
         currentFileInput.click();
-      });
+    });
+
+    // Also fix the "Browse Files" button
+    const browseBtn = uploadArea.querySelector('.browse-btn');
+    if (browseBtn) {
+        browseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            currentFileInput.click();
+        });
     }
+}
 
     function handleFileSelect(files) {
-      if (!files || files.length === 0) return;
+    if (!files || files.length === 0) return;
 
-      const newFiles = Array.from(files);
+    const newFiles = Array.from(files);
+    let addedCount = 0;
 
-      const uniqueNewFiles = newFiles.filter(newFile => {
+    newFiles.forEach(newFile => {
+        // Check for duplicates
         const isDuplicate = selectedFiles.some(existingFile =>
-          existingFile.name === newFile.name &&
-          existingFile.size === newFile.size &&
-          existingFile.lastModified === newFile.lastModified
+            existingFile.name === newFile.name &&
+            existingFile.size === newFile.size &&
+            existingFile.lastModified === newFile.lastModified
         );
 
-        if (isDuplicate) {
-          console.log('Skipping duplicate file:', newFile.name);
-          return false;
+        if (!isDuplicate) {
+            selectedFiles.push(newFile);
+            addedCount++;
+            console.log('Added file:', newFile.name);
+        } else {
+            console.log('Skipping duplicate file:', newFile.name);
         }
-        return true;
-      });
+    });
 
-      if (uniqueNewFiles.length > 0) {
-        selectedFiles = [...selectedFiles, ...uniqueNewFiles];
-        console.log('Added', uniqueNewFiles.length, 'new files. Total files:', selectedFiles.length);
+    if (addedCount > 0) {
+        console.log('Added', addedCount, 'new files. Total files:', selectedFiles.length);
         updateFileList();
-        showToast(`Added ${uniqueNewFiles.length} file(s)`);
-      } else {
+        showToast(`Added ${addedCount} file(s)`);
+    } else {
         console.log('No new files to add - all were duplicates');
         showToast('File already added', true);
-      }
     }
+}
 
     function formatFileSize(bytes) {
       if (bytes === 0) return '0 Bytes';
@@ -2259,9 +2283,9 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       setupAddRecordButton();
 
       // Also set up event listeners for file input
-      document.getElementById('fileUpload').addEventListener('change', function(e) {
-        handleFileSelect(e.target.files);
-      });
+      // document.getElementById('fileUpload').addEventListener('change', function(e) {
+      //   handleFileSelect(e.target.files);
+      // });
     });
   </script>
 </body>
