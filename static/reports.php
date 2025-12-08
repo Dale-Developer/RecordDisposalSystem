@@ -891,7 +891,7 @@
                     <div class="folder-item month-folder"
                       onclick="showMonthLogs('<?= $month_key ?>', '<?= htmlspecialchars($month_data['month_year']) ?>')"
                       data-month="<?= $month_key ?>">
-                      <i class="fas fa-folder folder-icon"></i>
+                      <i class="fas fa-folder folder-icon" style="    color: #1976d2;"></i>
                       <div class="folder-info">
                         <div class="folder-name"><?= $month_data['month_year'] ?></div>
                         <div class="folder-count"><?= $record_count ?> records</div>
@@ -917,7 +917,7 @@
                     ?>
                     <div class="folder-item type-folder" onclick="showTypeLogs('<?= htmlspecialchars($type) ?>')"
                       data-type="<?= htmlspecialchars($type) ?>">
-                      <i class="fas fa-folder folder-icon"></i>
+                      <i class="fas fa-folder folder-icon" style="color: #28a745;"></i>
                       <div class="folder-info">
                         <div class="folder-name"><?= htmlspecialchars($display_name) ?></div>
                         <div class="folder-count"><?= $record_count ?> records</div>
@@ -941,7 +941,7 @@
                   if ($record_count > 0): ?>
                     <div class="folder-item user-folder" onclick="showUserLogs('<?= htmlspecialchars($user_name) ?>')"
                       data-user="<?= htmlspecialchars($user_name) ?>">
-                      <i class="fas fa-folder folder-icon"></i>
+                      <i class="fas fa-folder folder-icon" style="color: #ff9800;;"></i>
                       <div class="folder-info">
                         <div class="folder-name"><?= htmlspecialchars($user_name) ?></div>
                         <div class="folder-count"><?= $record_count ?> records</div>
