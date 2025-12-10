@@ -617,7 +617,7 @@ function getUser($pdo, $current_user_id) {
           <!-- Left Navigation -->
           <nav class="settings-nav">
             <div class="nav-section">
-              <h3 class="nav-section-title">SETTINGS</h3>
+              <h3 class="nav-section-title"></h3>
               <div class="nav-item active" data-tab="account">
                 <i class="fas fa-user-cog"></i>
                 <span>My Account</span>
@@ -628,10 +628,10 @@ function getUser($pdo, $current_user_id) {
                 <span>User Management</span>
               </div>
               <?php endif; ?>
-              <div class="nav-item" data-tab="security">
+              <!-- <div class="nav-item" data-tab="security">
                 <i class="fas fa-shield-alt"></i>
                 <span>Security</span>
-              </div>
+              </div> -->
             </div>
           </nav>
           
