@@ -2,7 +2,6 @@
 require_once '../session.php';
 require_once '../db_connect.php';
 
-
 // Check database connection
 if (!isset($pdo)) {
     die("Database connection not established");
@@ -203,8 +202,6 @@ if (isset($_SESSION['message'])) {
 }
 
 // Query to get archived records for disposal
-// Query to get archived records for disposal
-// Query to get archived records for disposal
 try {
     if ($tableExists) {
         // Debug: Check what statuses exist
@@ -213,7 +210,7 @@ try {
         $statuses = $debugStmt->fetchAll(PDO::FETCH_COLUMN);
         error_log("Available statuses in records: " . implode(', ', $statuses));
 
-        // Get archived records - REMOVED disposition_type filter temporarily for testing
+        // Get archived records
         $sql = "SELECT 
                     r.record_id,
                     r.record_series_code,
@@ -224,7 +221,6 @@ try {
                     r.period_to as inclusive_date_to,
                     r.total_years,
                     rp.period_name as retention_period,
-                    r.disposition_type,
                     r.status
                 FROM records r
                 JOIN offices o ON r.office_id = o.office_id
@@ -249,8 +245,7 @@ try {
         if (count($disposableRecords) > 0) {
             foreach ($disposableRecords as $record) {
                 error_log("Record ID: {$record['record_id']}, Code: {$record['record_series_code']}, " .
-                    "Title: {$record['record_title']}, Status: {$record['status']}, " .
-                    "Disposition: {$record['disposition_type']}");
+                    "Title: {$record['record_title']}, Status: {$record['status']}");
             }
         }
 
@@ -262,7 +257,6 @@ try {
                             r.record_series_code,
                             r.record_series_title,
                             r.status,
-                            r.disposition_type,
                             CASE 
                                 WHEN EXISTS (
                                     SELECT 1 FROM disposal_request_details drd
@@ -280,8 +274,7 @@ try {
             error_log("Debug check of ALL archived records:");
             foreach ($checkResults as $check) {
                 error_log("Record ID: {$check['record_id']}, Code: {$check['record_series_code']}, " .
-                    "Title: {$check['record_series_title']}, Status: {$check['status']}, " .
-                    "Disposition: {$check['disposition_type']}, Availability: {$check['availability']}");
+                    "Title: {$check['record_series_title']}, Status: {$check['status']}, Availability: {$check['availability']}");
             }
         }
 
@@ -296,6 +289,7 @@ try {
     }
     error_log("Error in disposable records query: " . $e->getMessage());
 }
+
 // Query for disposal requests
 try {
     if ($tableExists) {
@@ -430,8 +424,8 @@ try {
         }
 
         .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
+            padding: 5px 12px;
+            border-radius: 5px;
             font-size: 0.85em;
             font-weight: 600;
             display: inline-block;
@@ -440,25 +434,25 @@ try {
         .status-pending {
             background-color: #fef3c7;
             color: #92400e;
-            border: 1px solid #fbbf24;
+            /* border: 1px solid #fbbf24; */
         }
 
         .status-approved {
             background-color: #d1fae5;
             color: #065f46;
-            border: 1px solid #10b981;
+            /* border: 1px solid #10b981; */
         }
 
         .status-rejected {
             background-color: #fee2e2;
             color: #991b1b;
-            border: 1px solid #f87171;
+            /* border: 1px solid #f87171; */
         }
 
         .status-disposed {
             background-color: #e0f2fe;
             color: #075985;
-            border: 1px solid #0ea5e9;
+            /* border: 1px solid #0ea5e9; */
         }
     </style>
 </head>
@@ -582,7 +576,6 @@ try {
                                     </td>
                                     <td style="width: 1%; white-space: nowrap;">
                                         <span class="status-badge status-<?php echo strtolower($request['status']); ?>">
-                                            <!-- <i class='bx bx-circle' style="font-size: 0.6rem; margin-right: 4px;"></i> -->
                                             <?php echo $request['status']; ?>
                                         </span>
                                     </td>
@@ -779,7 +772,6 @@ try {
         </div>
 
         <!-- VIEW REQUEST MODAL -->
-        <!-- VIEW REQUEST MODAL -->
         <div id="view-request-modal" class="disposal-modal-overlay">
             <div class="disposal-modal-content">
                 <div class="disposal-modal-header">
@@ -876,7 +868,6 @@ try {
                                             <th>CLASSIFICATION</th>
                                             <th>PERIOD COVERED</th>
                                             <th>RETENTION PERIOD</th>
-                                            <th>DISPOSITION</th>
                                             <th>STATUS</th>
                                         </tr>
                                     </thead>
@@ -1145,14 +1136,13 @@ try {
                 <td>${escapeHtml(record.class_name || 'N/A')}</td>
                 <td>${formatDate(record.period_from)} - ${formatDate(record.period_to)}</td>
                 <td>${formatRetentionPeriod(record)}</td>
-                <td><span class="disposition-tag disposition-${(record.disposition_type || 'dispose').toLowerCase()}">${record.disposition_type || 'Dispose'}</span></td>
                 <td><span class="status-badge status-${(record.status || 'pending').toLowerCase()}">${record.status || 'Pending'}</span></td>
             `;
                     recordsTable.appendChild(row);
                 });
             } else {
                 recordsTable.innerHTML = `
-            <tr><td colspan="8" style="text-align: center; padding: 2rem; color: #78909c;">
+            <tr><td colspan="7" style="text-align: center; padding: 2rem; color: #78909c;">
                 <i class='bx bx-file-blank' style="font-size: 2rem; display: block; margin-bottom: 1rem;"></i>
                 No records found for this request
             </td></tr>
@@ -1252,6 +1242,7 @@ try {
                 declineBtn.disabled = false;
             }
         }
+
         function printRequest() {
             const printContent = document.getElementById('view-content').cloneNode(true);
             const requestId = document.getElementById('view-request-id').textContent;
@@ -1275,18 +1266,16 @@ try {
                         .form-group { margin-bottom: 15px; }
                         .full-width { grid-column: 1 / -1; }
                         .form-label { font-weight: bold; display: block; margin-bottom: 5px; color: #555; }
-                        .form-input { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9f9; min-height: 36px; }
+                        .form-input { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9fa; min-height: 36px; }
                         .form-textarea { min-height: 60px; white-space: pre-wrap; line-height: 1.4; }
                         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
                         th { background-color: #f8f9fa; padding: 10px; text-align: left; border: 1px solid #dee2e6; font-weight: bold; }
                         td { padding: 10px; border: 1px solid #dee2e6; vertical-align: top; }
-                        .status-badge, .disposition-tag { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block; }
+                        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block; }
                         .status-pending { background-color: #fff3cd; color: #856404; }
                         .status-approved { background-color: #d4edda; color: #155724; }
                         .status-rejected { background-color: #f8d7da; color: #721c24; }
                         .status-disposed { background-color: #d1ecf1; color: #0c5460; }
-                        .disposition-dispose { background-color: #f8d7da; color: #721c24; }
-                        .disposition-archive { background-color: #d4edda; color: #155724; }
                         .print-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 0.9em; }
                         @media print { body { padding: 0; } .print-header { border-bottom: 1px solid #000; } .print-date { display: none; } .form-section { margin-bottom: 20px; } table { page-break-inside: avoid; } }
                     </style>
@@ -1385,5 +1374,4 @@ try {
         });
     </script>
 </body>
-
 </html>

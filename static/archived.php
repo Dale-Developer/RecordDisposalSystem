@@ -918,10 +918,10 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
             <div class="view-field" id="viewRecordSeries"></div>
           </div>
 
-          <div class="form-group">
+          <!-- <div class="form-group">
             <label>Disposition:</label>
             <div class="view-field" id="viewDisposition"></div>
-          </div>
+          </div> -->
 
           <div class="form-group">
             <label>Period Covered:</label>
@@ -994,10 +994,10 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
         </div>
 
         <!-- Disposition Instructions -->
-        <div class="form-group full-width" style="margin-top: 20px;">
+        <!-- <div class="form-group full-width" style="margin-top: 20px;">
           <label>Disposition Instructions:</label>
             <div class="view-field view-description" id="viewDispositionProvision"></div>
-        </div>
+        </div> -->
 
         <!-- Files Section -->
         <div class="uploaded-files-section" style="margin-top: 20px;">
@@ -1308,7 +1308,7 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       document.getElementById('viewRecordTitle').textContent = record.record_series_title || 'N/A';
       document.getElementById('viewOfficeDepartment').textContent = record.office_name || 'N/A';
       document.getElementById('viewRecordSeries').textContent = record.record_series_code || 'N/A';
-      document.getElementById('viewDisposition').textContent = record.disposition_type || 'N/A';
+      // document.getElementById('viewDisposition').textContent = record.disposition_type || 'N/A';
       document.getElementById('viewClassification').textContent = record.class_name || 'N/A';
       
       const fromDate = record.period_from ? formatDateForDisplay(record.period_from) : 'N/A';
@@ -1337,7 +1337,7 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       document.getElementById('viewFrequency').textContent = record.frequency_of_use || 'N/A';
       document.getElementById('viewUtilityValue').textContent = record.utility_value || 'N/A';
       document.getElementById('viewDescription').textContent = record.description || 'No description available.';
-      document.getElementById('viewDispositionProvision').textContent = record.disposition_provision || 'No disposition instructions.';
+      // document.getElementById('viewDispositionProvision').textContent = record.disposition_provision || 'No disposition instructions.';
       
       document.getElementById('viewRecordModalTitle').textContent = `VIEW ARCHIVED RECORD - ${record.record_series_code || 'ID: ' + record.record_id}`;
     }
