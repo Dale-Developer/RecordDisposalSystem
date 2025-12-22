@@ -8,6 +8,7 @@ if (!isset($pdo)) {
 }
 $user_role = $_SESSION['role_id'] ?? 0;
 $is_admin = ($user_role == 1); // Admin = role_id 1
+
 // Check if disposal_request_details table exists
 $tableCheck = $pdo->query("SHOW TABLES LIKE 'disposal_request_details'");
 $tableExists = $tableCheck->rowCount() > 0;
@@ -28,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
         $request_id = (int) $_POST['request_id'];
         $action = $_POST['action_type'];
         $user_id = $_SESSION['user_id'] ?? null;
+        $remarks = $_POST['remarks'] ?? null; // Get remarks from POST data
 
         if (!$user_id) {
             throw new Exception("User not logged in");
@@ -44,10 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
             // Update request status to Approved
             $stmt = $pdo->prepare("
                 UPDATE disposal_requests 
-                SET status = 'Approved' 
+                SET status = 'Approved', 
+                    remarks = ?
                 WHERE request_id = ?
             ");
-            $stmt->execute([$request_id]);
+            $stmt->execute([$remarks, $request_id]);
 
             // Update all records attached to this request to 'Disposed'
             $updateRecords = $pdo->prepare("
@@ -60,15 +63,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
 
             $_SESSION['message'] = "Request R-" . str_pad($request_id, 3, '0', STR_PAD_LEFT) . " has been approved. All attached records have been marked as Disposed.";
             $_SESSION['message_type'] = 'success';
-
         } elseif ($action === 'decline') {
-            // Update request status to Rejected
+            // Validate remarks for decline action
+            if (empty(trim($remarks))) {
+                throw new Exception("Remarks are required when declining a request. Please provide a reason.");
+            }
+
+            // Update request status to Rejected with remarks
             $stmt = $pdo->prepare("
                 UPDATE disposal_requests 
-                SET status = 'Rejected' 
+                SET status = 'Rejected', 
+                    remarks = ?
                 WHERE request_id = ?
             ");
-            $stmt->execute([$request_id]);
+            $stmt->execute([$remarks, $request_id]);
 
             // Update all records attached to this request back to 'Archived'
             $updateRecords = $pdo->prepare("
@@ -81,7 +89,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
 
             $_SESSION['message'] = "Request R-" . str_pad($request_id, 3, '0', STR_PAD_LEFT) . " has been rejected. All attached records have been returned to Archived status.";
             $_SESSION['message_type'] = 'success';
-
         } else {
             throw new Exception("Invalid action type");
         }
@@ -92,7 +99,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
         // Redirect to prevent form resubmission
         header("Location: " . $_SERVER['PHP_SELF']);
         exit();
-
     } catch (Exception $e) {
         // Rollback on error
         if ($pdo->inTransaction()) {
@@ -277,7 +283,6 @@ try {
                     "Title: {$check['record_series_title']}, Status: {$check['status']}, Availability: {$check['availability']}");
             }
         }
-
     } else {
         $disposableRecords = [];
     }
@@ -363,7 +368,7 @@ try {
 
         .modal-footer {
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-end;
             align-items: center;
             padding: 20px 30px;
             border-top: 1px solid #e5e7eb;
@@ -453,6 +458,56 @@ try {
             background-color: #e0f2fe;
             color: #075985;
             /* border: 1px solid #0ea5e9; */
+        }
+
+        /* Decline Modal Specific Styles */
+        #decline-modal .disposal-modal-content {
+            background: linear-gradient(135deg, #ffffff 0%, #fef2f2 100%);
+            /* border-top: 4px solid #ef4444; */
+        }
+
+        #decline-modal .form-textarea {
+            min-height: 120px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: inherit;
+            resize: vertical;
+        }
+
+        #decline-modal .form-textarea:focus {
+            outline: none;
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+
+        .char-count {
+            font-size: 0.85em;
+            color: #6b7280;
+        }
+
+        .required-text {
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+
+        /* Remarks Display in View Modal */
+        .view-remarks {
+            background-color: #f8f9fa;
+            border-left: 4px solid #ef4444;
+            padding: 12px 15px;
+            border-radius: 0 8px 8px 0;
+            margin-top: 10px;
+            font-style: italic;
+            color: #4b5563;
+        }
+
+        .view-remarks.approved {
+            border-left-color: #10b981;
+        }
+
+        .view-remarks.rejected {
+            border-left-color: #ef4444;
         }
     </style>
 </head>
@@ -723,9 +778,8 @@ try {
                                                 $fromYear = $record['inclusive_date_from'] ? date('Y', strtotime($record['inclusive_date_from'])) : 'N/A';
                                                 $toYear = $record['inclusive_date_to'] ? date('Y', strtotime($record['inclusive_date_to'])) : 'N/A';
                                                 $retention = !empty($record['total_years']) && is_numeric($record['total_years']) ?
-                                                    $record['total_years'] . ' years' :
-                                                    (!empty($record['total_years']) ? htmlspecialchars($record['total_years']) : 'N/A');
-                                                ?>
+                                                    $record['total_years'] . ' years' : (!empty($record['total_years']) ? htmlspecialchars($record['total_years']) : 'N/A');
+                                            ?>
                                                 <tr class="record-row" data-id="<?php echo $record['record_id']; ?>">
                                                     <td class="checkbox-cell">
                                                         <input type="checkbox" name="selected_records[]"
@@ -897,11 +951,56 @@ try {
                 </div>
             </div>
         </div>
+        <!-- DECLINE REMARKS MODAL -->
+        <div id="decline-modal" class="disposal-modal-overlay">
+            <div class="disposal-modal-content" style="max-width: 500px;">
+                <div class="disposal-modal-header">
+                    <button class="disposal-close-modal" onclick="closeDeclineModal()">
+                        <i class='bx bx-x'></i>
+                    </button>
+                    <h2 class="disposal-modal-title">
+                        <i class='bx bx-x-circle' style="margin-right: 10px; color: #ef4444;"></i> DECLINE REQUEST
+                    </h2>
+                    <p class="disposal-modal-subtitle">Please provide a reason for declining this request</p>
+                </div>
+
+                <div class="disposal-modal-body">
+                    <div class="form-section">
+                        <div class="form-group full-width">
+                            <label class="form-label">Remarks <span class="required">*</span></label>
+                            <textarea
+                                class="form-input form-textarea"
+                                id="decline-remarks"
+                                placeholder="Enter the reason for declining this request..."
+                                rows="5"
+                                maxlength="500"></textarea>
+                            <div class="form-help" style="display: flex; justify-content: space-between; margin-top: 5px;">
+                                <span class="char-count">
+                                    <span id="char-count">0</span>/500 characters
+                                </span>
+                                <span class="required-text" style="color: #ef4444;">Required for decline</span>
+                            </div>
+                            <div class="error-message" id="remarks-error"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-cancel" onclick="closeDeclineModal()">
+                        <i class='bx bx-x' style="margin-right: 8px;"></i> Cancel
+                    </button>
+                    <button type="button" class="btn decline" onclick="submitDecline()">
+                        <i class='bx bx-check' style="margin-right: 8px;"></i> Confirm Decline
+                    </button>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
         // ========== GLOBAL VARIABLES ==========
         let currentRequestId = null;
+        let declineRequestId = null;
 
         // ========== DISPOSAL MODAL FUNCTIONS ==========
         function openDisposalModal() {
@@ -961,12 +1060,12 @@ try {
                 checkboxes.forEach(checkbox => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${checkbox.dataset.code}</td>
-                        <td>${checkbox.dataset.title}</td>
-                        <td>${checkbox.dataset.office}</td>
-                        <td>${checkbox.dataset.from} - ${checkbox.dataset.to}</td>
-                        <td>${checkbox.dataset.retention}</td>
-                    `;
+                    <td>${checkbox.dataset.code}</td>
+                    <td>${checkbox.dataset.title}</td>
+                    <td>${checkbox.dataset.office}</td>
+                    <td>${checkbox.dataset.from} - ${checkbox.dataset.to}</td>
+                    <td>${checkbox.dataset.retention}</td>
+                `;
                     summaryTable.appendChild(row);
                 });
                 submitBtn.disabled = false;
@@ -1063,13 +1162,13 @@ try {
             } catch (error) {
                 console.error('Error loading request details:', error);
                 document.getElementById('view-loading').innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-                <i class='bx bx-error' style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
-                <p style="color: #dc3545; font-size: 1.1rem;">Failed to load request details</p>
-                <p style="color: #6c757d; font-size: 0.9rem;">${error.message}</p>
-                <button onclick="closeViewModal()" style="margin-top: 20px; padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
-            </div>
-        `;
+                <div style="text-align: center; padding: 20px;">
+                    <i class='bx bx-error' style="font-size: 3rem; color: #dc3545; margin-bottom: 20px;"></i>
+                    <p style="color: #dc3545; font-size: 1.1rem;">Failed to load request details</p>
+                    <p style="color: #6c757d; font-size: 0.9rem;">${error.message}</p>
+                    <button onclick="closeViewModal()" style="margin-top: 20px; padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+                </div>
+            `;
             }
         }
 
@@ -1097,6 +1196,32 @@ try {
             statusElement.textContent = request.status || 'Pending';
             statusElement.className = 'form-input view-only status-badge';
             statusElement.classList.add(`status-${(request.status || 'pending').toLowerCase()}`);
+
+            // Add remarks display if remarks exist
+            if (request.remarks) {
+                const existingRemarksSection = document.querySelector('#view-content .remarks-section');
+                if (existingRemarksSection) {
+                    existingRemarksSection.remove();
+                }
+
+                const remarksSection = document.createElement('div');
+                remarksSection.className = 'form-section remarks-section';
+                remarksSection.innerHTML = `
+                <div class="section-title">
+                    <div class="section-title-icon"><i class='bx bx-message-alt-detail'></i></div>
+                    <h3 class="section-title-text">Remarks</h3>
+                </div>
+                <div class="form-group">
+                    <div class="form-input form-textarea view-only remarks-display" style="background-color: #f8f9fa; border-left: 4px solid #${request.status === 'Rejected' ? 'ef4444' : '10b981'};">
+                        ${escapeHtml(request.remarks)}
+                    </div>
+                </div>
+            `;
+
+                // Insert after status section
+                const statusSection = document.querySelector('#view-content .form-section:has(#view-status)');
+                statusSection.parentNode.insertBefore(remarksSection, statusSection.nextSibling);
+            }
 
             // Check if admin buttons exist before trying to modify them
             const approveBtn = document.getElementById('approve-btn');
@@ -1130,23 +1255,23 @@ try {
                 records.forEach(record => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                <td>${escapeHtml(record.record_series_code || 'N/A')}</td>
-                <td>${escapeHtml(record.record_series_title || 'N/A')}</td>
-                <td>${escapeHtml(record.office_name || 'N/A')}</td>
-                <td>${escapeHtml(record.class_name || 'N/A')}</td>
-                <td>${formatDate(record.period_from)} - ${formatDate(record.period_to)}</td>
-                <td>${formatRetentionPeriod(record)}</td>
-                <td><span class="status-badge status-${(record.status || 'pending').toLowerCase()}">${record.status || 'Pending'}</span></td>
-            `;
+                    <td>${escapeHtml(record.record_series_code || 'N/A')}</td>
+                    <td>${escapeHtml(record.record_series_title || 'N/A')}</td>
+                    <td>${escapeHtml(record.office_name || 'N/A')}</td>
+                    <td>${escapeHtml(record.class_name || 'N/A')}</td>
+                    <td>${formatDate(record.period_from)} - ${formatDate(record.period_to)}</td>
+                    <td>${formatRetentionPeriod(record)}</td>
+                    <td><span class="status-badge status-${(record.status || 'pending').toLowerCase()}">${record.status || 'Pending'}</span></td>
+                `;
                     recordsTable.appendChild(row);
                 });
             } else {
                 recordsTable.innerHTML = `
-            <tr><td colspan="7" style="text-align: center; padding: 2rem; color: #78909c;">
-                <i class='bx bx-file-blank' style="font-size: 2rem; display: block; margin-bottom: 1rem;"></i>
-                No records found for this request
-            </td></tr>
-        `;
+                <tr><td colspan="7" style="text-align: center; padding: 2rem; color: #78909c;">
+                    <i class='bx bx-file-blank' style="font-size: 2rem; display: block; margin-bottom: 1rem;"></i>
+                    No records found for this request
+                </td></tr>
+            `;
             }
         }
 
@@ -1154,6 +1279,99 @@ try {
             document.getElementById('view-request-modal').style.display = 'none';
             document.body.style.overflow = 'auto';
             currentRequestId = null;
+        }
+
+        // ========== DECLINE MODAL FUNCTIONS ==========
+        function showDeclineModal(requestId) {
+            declineRequestId = requestId;
+
+            // Reset form
+            document.getElementById('decline-remarks').value = '';
+            document.getElementById('char-count').textContent = '0';
+            document.getElementById('remarks-error').classList.remove('show');
+
+            // Show modal
+            document.getElementById('decline-modal').style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+
+            // Focus on textarea
+            setTimeout(() => {
+                document.getElementById('decline-remarks').focus();
+            }, 100);
+        }
+
+        function closeDeclineModal() {
+            document.getElementById('decline-modal').style.display = 'none';
+            document.body.style.overflow = 'auto';
+            declineRequestId = null;
+        }
+
+        function updateCharCount() {
+            const textarea = document.getElementById('decline-remarks');
+            const charCount = document.getElementById('char-count');
+            charCount.textContent = textarea.value.length;
+
+            // Change color when approaching limit
+            if (textarea.value.length > 450) {
+                charCount.style.color = '#ef4444';
+            } else if (textarea.value.length > 400) {
+                charCount.style.color = '#f59e0b';
+            } else {
+                charCount.style.color = '#6b7280';
+            }
+        }
+
+        async function submitDecline() {
+            const remarks = document.getElementById('decline-remarks').value.trim();
+            const errorElement = document.getElementById('remarks-error');
+
+            // Validate remarks
+            if (!remarks) {
+                errorElement.textContent = 'Please provide a reason for declining this request';
+                errorElement.classList.add('show');
+                return;
+            }
+
+            if (remarks.length < 10) {
+                errorElement.textContent = 'Please provide a more detailed reason (minimum 10 characters)';
+                errorElement.classList.add('show');
+                return;
+            }
+
+            errorElement.classList.remove('show');
+
+            const declineBtn = document.querySelector('#decline-modal .decline');
+            const originalText = declineBtn.innerHTML;
+
+            // Show loading state
+            declineBtn.innerHTML = '<i class="bx bx-loader-circle bx-spin" style="margin-right: 8px;"></i> Processing...';
+            declineBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('request_id', declineRequestId);
+                formData.append('action_type', 'decline');
+                formData.append('remarks', remarks);
+
+                const response = await fetch('<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Close modals and reload
+                    closeDeclineModal();
+                    closeViewModal();
+                    window.location.reload();
+                } else {
+                    throw new Error('Failed to decline request');
+                }
+            } catch (error) {
+                console.error('Error declining request:', error);
+                alert('Failed to decline request: ' + error.message);
+                declineBtn.innerHTML = originalText;
+                declineBtn.disabled = false;
+            }
         }
 
         // ========== APPROVE/DECLINE FUNCTIONS ==========
@@ -1178,6 +1396,7 @@ try {
                 const formData = new FormData();
                 formData.append('request_id', currentRequestId);
                 formData.append('action_type', 'approve');
+                formData.append('remarks', ''); // Empty remarks for approve
 
                 const response = await fetch('<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>', {
                     method: 'POST',
@@ -1200,107 +1419,79 @@ try {
             }
         }
 
-        async function declineRequest() {
+        function declineRequest() {
             if (!currentRequestId) return;
 
-            const approveBtn = document.getElementById('approve-btn');
-            const declineBtn = document.getElementById('decline-btn');
-
-            // Check if buttons exist (admin only)
-            if (!approveBtn || !declineBtn) return;
-
-            if (!confirm('Are you sure you want to decline this disposal request? This action cannot be undone.')) {
-                return;
-            }
-
-            declineBtn.innerHTML = '<i class="bx bx-loader-circle bx-spin" style="color:#ffffff"></i> Declining...';
-            approveBtn.disabled = true;
-            declineBtn.disabled = true;
-
-            try {
-                const formData = new FormData();
-                formData.append('request_id', currentRequestId);
-                formData.append('action_type', 'decline');
-
-                const response = await fetch('<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (response.ok) {
-                    // Close modal and reload page
-                    closeViewModal();
-                    window.location.reload();
-                } else {
-                    throw new Error('Failed to decline request');
-                }
-            } catch (error) {
-                console.error('Error declining request:', error);
-                alert('Failed to decline request: ' + error.message);
-                declineBtn.innerHTML = '<i class="bx bx-x" style="color:#ffffff"></i> Decline Request';
-                approveBtn.disabled = false;
-                declineBtn.disabled = false;
-            }
+            // Instead of immediate confirmation, show remarks modal
+            showDeclineModal(currentRequestId);
         }
 
+        // ========== PRINT FUNCTION ==========
         function printRequest() {
             const printContent = document.getElementById('view-content').cloneNode(true);
             const requestId = document.getElementById('view-request-id').textContent;
 
             const printWindow = window.open('', '_blank');
             printWindow.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Disposal Request - ${requestId}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-                        .print-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; }
-                        .print-header h1 { color: #1e3a8a; margin-bottom: 5px; }
-                        .print-header .request-id { font-size: 1.2em; color: #666; }
-                        .print-date { text-align: right; margin-bottom: 20px; color: #666; }
-                        .form-section { margin-bottom: 25px; page-break-inside: avoid; }
-                        .section-title { background-color: #f8f9fa; padding: 10px 15px; border-left: 4px solid #1e3a8a; margin-bottom: 15px; border-radius: 4px; }
-                        .section-title h3 { margin: 0; color: #1e3a8a; font-size: 1.1em; }
-                        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px; }
-                        .form-group { margin-bottom: 15px; }
-                        .full-width { grid-column: 1 / -1; }
-                        .form-label { font-weight: bold; display: block; margin-bottom: 5px; color: #555; }
-                        .form-input { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9fa; min-height: 36px; }
-                        .form-textarea { min-height: 60px; white-space: pre-wrap; line-height: 1.4; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
-                        th { background-color: #f8f9fa; padding: 10px; text-align: left; border: 1px solid #dee2e6; font-weight: bold; }
-                        td { padding: 10px; border: 1px solid #dee2e6; vertical-align: top; }
-                        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block; }
-                        .status-pending { background-color: #fff3cd; color: #856404; }
-                        .status-approved { background-color: #d4edda; color: #155724; }
-                        .status-rejected { background-color: #f8d7da; color: #721c24; }
-                        .status-disposed { background-color: #d1ecf1; color: #0c5460; }
-                        .print-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 0.9em; }
-                        @media print { body { padding: 0; } .print-header { border-bottom: 1px solid #000; } .print-date { display: none; } .form-section { margin-bottom: 20px; } table { page-break-inside: avoid; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="print-header">
-                        <h1>DISPOSAL REQUEST DETAILS</h1>
-                        <div class="request-id">Request ID: ${requestId}</div>
-                    </div>
-                    <div class="print-date">Printed on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
-                    ${printContent.innerHTML}
-                    <div class="print-footer">This document is system-generated. For verification, please refer to the original request in the system.</div>
-                    <script>
-                        window.onload = function() {
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Disposal Request - ${requestId}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+                    .print-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1e3a8a; padding-bottom: 20px; }
+                    .print-header h1 { color: #1e3a8a; margin-bottom: 5px; }
+                    .print-header .request-id { font-size: 1.2em; color: #666; }
+                    .print-date { text-align: right; margin-bottom: 20px; color: #666; }
+                    .form-section { margin-bottom: 25px; page-break-inside: avoid; }
+                    .section-title { background-color: #f8f9fa; padding: 10px 15px; border-left: 4px solid #1e3a8a; margin-bottom: 15px; border-radius: 4px; }
+                    .section-title h3 { margin: 0; color: #1e3a8a; font-size: 1.1em; }
+                    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px; }
+                    .form-group { margin-bottom: 15px; }
+                    .full-width { grid-column: 1 / -1; }
+                    .form-label { font-weight: bold; display: block; margin-bottom: 5px; color: #555; }
+                    .form-input { padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; background-color: #f9f9fa; min-height: 36px; }
+                    .form-textarea { min-height: 60px; white-space: pre-wrap; line-height: 1.4; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
+                    th { background-color: #f8f9fa; padding: 10px; text-align: left; border: 1px solid #dee2e6; font-weight: bold; }
+                    td { padding: 10px; border: 1px solid #dee2e6; vertical-align: top; }
+                    .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block; }
+                    .status-pending { background-color: #fff3cd; color: #856404; }
+                    .status-approved { background-color: #d4edda; color: #155724; }
+                    .status-rejected { background-color: #f8d7da; color: #721c24; }
+                    .status-disposed { background-color: #d1ecf1; color: #0c5460; }
+                    .remarks-display { background-color: #f8f9fa; border-left: 4px solid #ef4444; padding: 10px; margin-top: 5px; }
+                    .print-footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 0.9em; }
+                    @media print { 
+                        body { padding: 0; } 
+                        .print-header { border-bottom: 1px solid #000; } 
+                        .print-date { display: none; } 
+                        .form-section { margin-bottom: 20px; } 
+                        table { page-break-inside: avoid; } 
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="print-header">
+                    <h1>DISPOSAL REQUEST DETAILS</h1>
+                    <div class="request-id">Request ID: ${requestId}</div>
+                </div>
+                <div class="print-date">Printed on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
+                ${printContent.innerHTML}
+                <div class="print-footer">This document is system-generated. For verification, please refer to the original request in the system.</div>
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
                             setTimeout(function() {
-                                window.print();
-                                setTimeout(function() {
-                                    window.close();
-                                }, 100);
-                            }, 500);
-                        };
-                    <\/script>
-                </body>
-                </html>
-            `);
+                                window.close();
+                            }, 100);
+                        }, 500);
+                    };
+                <\/script>
+            </body>
+            </html>
+        `);
             printWindow.document.close();
         }
 
@@ -1308,7 +1499,11 @@ try {
         function formatDate(dateString) {
             if (!dateString || dateString.includes('0000-00-00')) return 'N/A';
             const date = new Date(dateString);
-            return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+            return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
         }
 
         function formatDateTime(dateTimeString) {
@@ -1337,29 +1532,38 @@ try {
         }
 
         // ========== EVENT LISTENERS ==========
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             // Initialize
             updateSelectedSummary();
             document.getElementById('request_date').value = new Date().toISOString().split('T')[0];
 
             // Modal close handlers
-            document.getElementById('disposal-modal').addEventListener('click', function (e) {
+            document.getElementById('disposal-modal').addEventListener('click', function(e) {
                 if (e.target === this) closeDisposalModal();
             });
-            document.getElementById('view-request-modal').addEventListener('click', function (e) {
+
+            document.getElementById('view-request-modal').addEventListener('click', function(e) {
                 if (e.target === this) closeViewModal();
             });
 
+            document.getElementById('decline-modal').addEventListener('click', function(e) {
+                if (e.target === this) closeDeclineModal();
+            });
+
             // Escape key to close modals
-            document.addEventListener('keydown', function (e) {
+            document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape') {
                     closeDisposalModal();
                     closeViewModal();
+                    closeDeclineModal();
                 }
             });
 
+            // Character count for decline remarks
+            document.getElementById('decline-remarks').addEventListener('input', updateCharCount);
+
             // View button click handler
-            document.addEventListener('click', function (e) {
+            document.addEventListener('click', function(e) {
                 const viewBtn = e.target.closest('.view-btn');
                 if (viewBtn && !viewBtn.disabled) {
                     e.preventDefault();
@@ -1374,4 +1578,5 @@ try {
         });
     </script>
 </body>
+
 </html>
