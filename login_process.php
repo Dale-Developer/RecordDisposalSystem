@@ -2,6 +2,8 @@
 session_start();
 require_once 'db_connect.php'; // This creates $pdo, not $conn
 require_once 'log_activity.php';
+// require_once '../log_activity.php';
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
