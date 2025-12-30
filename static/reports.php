@@ -20,230 +20,511 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 try {
-    $sql = "SELECT 
-                -- Record Information
-                r.record_id,
-                r.record_series_code,
-                r.record_series_title,
-                r.office_id,
-                o.office_name,
-                r.class_id,
-                rc.class_name,
-                r.period_from,
-                r.period_to,
-                r.active_years,
-                r.storage_years,
-                r.total_years,
-                r.retention_period_id,
-                rp.period_name,
-                r.disposition_type,
-                r.status as record_status,
-                r.date_created as record_created_date,
-                r.created_at as record_db_created_at,
-                r.updated_at as record_last_updated,
-                r.created_by as created_by_user_id,
-                
-                -- Basic Creator Information
-                creator.user_id as creator_user_id,
-                CONCAT(creator.first_name, ' ', creator.last_name) as creator_name,
-                creator.email as creator_email,
-                creator_role.role_name as creator_role,
-                creator_office.office_name as creator_office_name,
-                
-                -- Disposal Request Information
-                dr.request_id as disposal_request_id,
-                dr.agency_name as disposal_agency_name,
-                dr.request_date as disposal_request_date,
-                dr.status as disposal_request_status,
-                dr.created_at as disposal_created_at,
-                dr.requested_by as disposal_created_by,
-                dr.approved_by as disposal_approved_by,
-                dr.approved_at as disposal_approved_at,
-                dr.rejected_by as disposal_rejected_by,
-                dr.rejected_at as disposal_rejected_at,
-                dr.remarks as disposal_remarks,
-                
-                -- Basic Disposal Requester Information
-                disposal_requester.user_id as disposal_requester_id,
-                CONCAT(disposal_requester.first_name, ' ', disposal_requester.last_name) as disposal_creator_name,
-                disposal_requester.email as disposal_creator_email,
-                disposal_requester_role.role_name as disposal_creator_role,
-                disposal_requester_office.office_name as disposal_creator_office,
-                
-                -- Disposal Approver Information (from disposal_requests table)
-                approver.user_id as approver_user_id,
-                CONCAT(approver.first_name, ' ', approver.last_name) as approver_name,
-                approver.email as approver_email,
-                approver_role.role_name as approver_role,
-                approver_office.office_name as approver_office,
-                
-                -- Disposal Rejector Information (from disposal_requests table)
-                rejector.user_id as rejector_user_id,
-                CONCAT(rejector.first_name, ' ', rejector.last_name) as rejector_name,
-                rejector.email as rejector_email,
-                rejector_role.role_name as rejector_role,
-                rejector_office.office_name as rejector_office,
-                
-                -- Retention Calculation
-                CASE 
-                    WHEN r.period_to IS NOT NULL AND r.period_to <= CURDATE() THEN 'Retention Period Reached'
-                    WHEN r.status = 'Archived' THEN 'Archived'
-                    WHEN r.status = 'Disposed' THEN 'Disposed'
-                    ELSE 'Active'
-                END as retention_status,
-                
-                -- Retention End Date
-                DATE_ADD(r.period_to, INTERVAL r.total_years YEAR) as retention_end_date
-                
-            FROM records r
-            
-            -- Record joins
-            LEFT JOIN offices o ON r.office_id = o.office_id
-            LEFT JOIN record_classification rc ON r.class_id = rc.class_id
-            LEFT JOIN retention_periods rp ON r.retention_period_id = rp.period_id
-            
-            -- Creator information
-            LEFT JOIN users creator ON r.created_by = creator.user_id
-            LEFT JOIN roles creator_role ON creator.role_id = creator_role.role_id
-            LEFT JOIN offices creator_office ON creator.office_id = creator_office.office_id
-            
-            -- Disposal request joins
-            LEFT JOIN disposal_request_details drd ON r.record_id = drd.record_id
-            LEFT JOIN disposal_requests dr ON drd.request_id = dr.request_id
-            LEFT JOIN users disposal_requester ON dr.requested_by = disposal_requester.user_id
-            LEFT JOIN roles disposal_requester_role ON disposal_requester.role_id = disposal_requester_role.role_id
-            LEFT JOIN offices disposal_requester_office ON disposal_requester.office_id = disposal_requester_office.office_id
-            
-            -- Approver information (from disposal_requests)
-            LEFT JOIN users approver ON dr.approved_by = approver.user_id
-            LEFT JOIN roles approver_role ON approver.role_id = approver_role.role_id
-            LEFT JOIN offices approver_office ON approver.office_id = approver_office.office_id
-            
-            -- Rejector information (from disposal_requests)
-            LEFT JOIN users rejector ON dr.rejected_by = rejector.user_id
-            LEFT JOIN roles rejector_role ON rejector.role_id = rejector_role.role_id
-            LEFT JOIN offices rejector_office ON rejector.office_id = rejector_office.office_id
-            
-            WHERE 1=1";
-
-    $params = [];
-
-    // Apply filters
+    // ========== QUERY 1: RECORD CREATION LOGS ==========
+    $creation_logs_sql = "SELECT 
+                            r.record_id,
+                            r.record_series_code,
+                            r.record_series_title,
+                            r.date_created as action_date,
+                            r.created_by,
+                            r.office_id,
+                            r.status,
+                            'RECORD_CREATED' as action_type,
+                            NULL as status_from,
+                            r.status as status_to,
+                            'Record was created' as notes,
+                            NULL as request_id,
+                            NULL as schedule_id,
+                            
+                            -- User who created the record
+                            u.first_name,
+                            u.last_name,
+                            u.email as user_email,
+                            
+                            -- User's role
+                            ur.role_name,
+                            
+                            -- User's office
+                            uo.office_name as user_office_name,
+                            
+                            -- Record's office
+                            ro.office_name as record_office_name,
+                            
+                            -- Record classification
+                            rc.class_name
+                            
+                        FROM records r
+                        
+                        LEFT JOIN users u ON r.created_by = u.user_id
+                        LEFT JOIN roles ur ON u.role_id = ur.role_id
+                        LEFT JOIN offices uo ON u.office_id = uo.office_id
+                        LEFT JOIN offices ro ON r.office_id = ro.office_id
+                        LEFT JOIN record_classification rc ON r.class_id = rc.class_id
+                        
+                        WHERE 1=1";
+    
+    $creation_params = [];
+    
+    // Apply filters for creation logs
     if ($search_filter) {
-        $sql .= " AND (
+        $creation_logs_sql .= " AND (
                     r.record_series_title LIKE ? OR 
                     r.record_series_code LIKE ? OR
-                    rc.class_name LIKE ? OR
-                    o.office_name LIKE ? OR
-                    creator.first_name LIKE ? OR
-                    creator.last_name LIKE ? OR
-                    creator.email LIKE ? OR
-                    disposal_requester.first_name LIKE ? OR
-                    disposal_requester.last_name LIKE ? OR
-                    approver.first_name LIKE ? OR
-                    approver.last_name LIKE ? OR
-                    rejector.first_name LIKE ? OR
-                    rejector.last_name LIKE ?
+                    u.first_name LIKE ? OR
+                    u.last_name LIKE ? OR
+                    u.email LIKE ? OR
+                    ro.office_name LIKE ? OR
+                    rc.class_name LIKE ?
                 )";
         $search_param = "%$search_filter%";
-        $params = array_merge($params, array_fill(0, 13, $search_param));
+        $creation_params = array_merge($creation_params, array_fill(0, 7, $search_param));
     }
-
+    
     if ($date_from) {
-        $sql .= " AND (
-                    DATE(r.date_created) >= ? OR 
-                    DATE(dr.request_date) >= ? OR
-                    DATE(dr.approved_at) >= ? OR
-                    DATE(dr.rejected_at) >= ?
-                )";
-        $params[] = $date_from;
-        $params[] = $date_from;
-        $params[] = $date_from;
-        $params[] = $date_from;
+        $creation_logs_sql .= " AND DATE(r.date_created) >= ?";
+        $creation_params[] = $date_from;
     }
-
+    
     if ($date_to) {
-        $sql .= " AND (
-                    DATE(r.date_created) <= ? OR 
-                    DATE(dr.request_date) <= ? OR
-                    DATE(dr.approved_at) <= ? OR
-                    DATE(dr.rejected_at) <= ?
-                )";
-        $params[] = $date_to;
-        $params[] = $date_to;
-        $params[] = $date_to;
-        $params[] = $date_to;
+        $creation_logs_sql .= " AND DATE(r.date_created) <= ?";
+        $creation_params[] = $date_to;
     }
-
-    if ($action_type) {
-        // Filter by record status or request status
-        if ($action_type === 'Active') {
-            $sql .= " AND r.status = 'Active'";
-        } elseif ($action_type === 'Retention Reached') {
-            $sql .= " AND (r.period_to IS NOT NULL AND r.period_to <= CURDATE())";
-        } elseif ($action_type === 'Archived') {
-            $sql .= " AND r.status = 'Archived'";
-        } elseif ($action_type === 'Disposed') {
-            $sql .= " AND r.status = 'Disposed'";
-        } elseif (in_array($action_type, ['Pending', 'Approved', 'Rejected'])) {
-            $sql .= " AND dr.status = ?";
-            $params[] = $action_type;
+    
+    if ($action_type && $action_type === 'RECORD_CREATED') {
+        $creation_logs_sql .= " AND 1=1"; // Always true for creation filter
+    }
+    
+    // ========== QUERY 2: DISPOSAL ACTION LOGS ==========
+    $disposal_logs_sql = "SELECT 
+                            dal.action_id,
+                            dal.request_id,
+                            dal.record_id,
+                            dal.schedule_id,
+                            dal.action_type,
+                            dal.performed_by,
+                            dal.performed_at as action_date,
+                            dal.status_from,
+                            dal.status_to,
+                            dal.notes,
+                            dal.office_id,
+                            dal.role_id,
+                            
+                            -- User who performed the action
+                            u.first_name,
+                            u.last_name,
+                            u.email as user_email,
+                            
+                            -- User's role
+                            r.role_name,
+                            
+                            -- User's office
+                            o.office_name as user_office_name,
+                            
+                            -- Record information (if available)
+                            rec.record_series_code,
+                            rec.record_series_title,
+                            rec.office_id as record_office_id,
+                            rec_office.office_name as record_office_name,
+                            
+                            -- Record classification
+                            rc.class_name,
+                            
+                            -- Request information (if available)
+                            dr.agency_name,
+                            dr.request_date,
+                            dr.status as request_status
+                            
+                        FROM disposal_action_log dal
+                        
+                        LEFT JOIN users u ON dal.performed_by = u.user_id
+                        LEFT JOIN roles r ON dal.role_id = r.role_id
+                        LEFT JOIN offices o ON dal.office_id = o.office_id
+                        LEFT JOIN records rec ON dal.record_id = rec.record_id
+                        LEFT JOIN offices rec_office ON rec.office_id = rec_office.office_id
+                        LEFT JOIN record_classification rc ON rec.class_id = rc.class_id
+                        LEFT JOIN disposal_requests dr ON dal.request_id = dr.request_id
+                        
+                        WHERE 1=1";
+    
+    $disposal_params = [];
+    
+    // Apply filters for disposal logs
+    if ($search_filter) {
+        $disposal_logs_sql .= " AND (
+                    dal.action_type LIKE ? OR 
+                    dal.notes LIKE ? OR
+                    u.first_name LIKE ? OR
+                    u.last_name LIKE ? OR
+                    u.email LIKE ? OR
+                    rec.record_series_title LIKE ? OR
+                    rec.record_series_code LIKE ? OR
+                    dr.agency_name LIKE ? OR
+                    rec_office.office_name LIKE ? OR
+                    rc.class_name LIKE ?
+                )";
+        $search_param = "%$search_filter%";
+        $disposal_params = array_merge($disposal_params, array_fill(0, 10, $search_param));
+    }
+    
+    if ($date_from) {
+        $disposal_logs_sql .= " AND DATE(dal.performed_at) >= ?";
+        $disposal_params[] = $date_from;
+    }
+    
+    if ($date_to) {
+        $disposal_logs_sql .= " AND DATE(dal.performed_at) <= ?";
+        $disposal_params[] = $date_to;
+    }
+    
+    if ($action_type && $action_type !== 'all' && $action_type !== 'field_change' && $action_type !== 'RECORD_CREATED') {
+        $disposal_logs_sql .= " AND dal.action_type = ?";
+        $disposal_params[] = $action_type;
+    }
+    
+    // ========== QUERY 3: RECORD CHANGE LOGS ==========
+    $change_logs_sql = "SELECT 
+                            rcl.change_id,
+                            rcl.record_id,
+                            rcl.user_id,
+                            rcl.field_name,
+                            rcl.field_type,
+                            rcl.old_value_text,
+                            rcl.new_value_text,
+                            rcl.old_value_int,
+                            rcl.new_value_int,
+                            rcl.old_value_date,
+                            rcl.new_value_date,
+                            rcl.old_value_enum,
+                            rcl.new_value_enum,
+                            rcl.old_reference_id,
+                            rcl.new_reference_id,
+                            rcl.change_reason as notes,
+                            rcl.created_at as action_date,
+                            
+                            -- Action type for display
+                            CASE 
+                                WHEN rcl.field_name = 'status' THEN 'STATUS_CHANGED'
+                                ELSE 'FIELD_CHANGED'
+                            END as action_type,
+                            
+                            -- For status changes, map old and new values
+                            CASE 
+                                WHEN rcl.field_name = 'status' THEN rcl.old_value_enum
+                                ELSE NULL
+                            END as status_from,
+                            
+                            CASE 
+                                WHEN rcl.field_name = 'status' THEN rcl.new_value_enum
+                                ELSE NULL
+                            END as status_to,
+                            
+                            -- User who made the change
+                            u.first_name,
+                            u.last_name,
+                            u.email as user_email,
+                            
+                            -- User's role
+                            ur.role_name,
+                            
+                            -- User's office
+                            uo.office_name as user_office_name,
+                            
+                            -- Record information
+                            rec.record_series_code,
+                            rec.record_series_title,
+                            rec.office_id as record_office_id,
+                            rec_office.office_name as record_office_name,
+                            
+                            -- Record classification
+                            rc.class_name,
+                            
+                            -- For reference fields, get the names
+                            CASE 
+                                WHEN rcl.field_name = 'office_id' THEN old_office.office_name
+                                WHEN rcl.field_name = 'class_id' THEN old_class.class_name
+                                ELSE NULL
+                            END as old_reference_name,
+                            
+                            CASE 
+                                WHEN rcl.field_name = 'office_id' THEN new_office.office_name
+                                WHEN rcl.field_name = 'class_id' THEN new_class.class_name
+                                ELSE NULL
+                            END as new_reference_name
+                            
+                        FROM record_change_log rcl
+                        
+                        LEFT JOIN users u ON rcl.user_id = u.user_id
+                        LEFT JOIN roles ur ON u.role_id = ur.role_id
+                        LEFT JOIN offices uo ON u.office_id = uo.office_id
+                        LEFT JOIN records rec ON rcl.record_id = rec.record_id
+                        LEFT JOIN offices rec_office ON rec.office_id = rec_office.office_id
+                        LEFT JOIN record_classification rc ON rec.class_id = rc.class_id
+                        LEFT JOIN offices old_office ON rcl.old_reference_id = old_office.office_id AND rcl.field_name = 'office_id'
+                        LEFT JOIN offices new_office ON rcl.new_reference_id = new_office.office_id AND rcl.field_name = 'office_id'
+                        LEFT JOIN record_classification old_class ON rcl.old_reference_id = old_class.class_id AND rcl.field_name = 'class_id'
+                        LEFT JOIN record_classification new_class ON rcl.new_reference_id = new_class.class_id AND rcl.field_name = 'class_id'
+                        
+                        WHERE 1=1";
+    
+    $change_params = [];
+    
+    // Apply filters for change logs
+    if ($search_filter) {
+        $change_logs_sql .= " AND (
+                    rcl.field_name LIKE ? OR 
+                    rcl.change_reason LIKE ? OR
+                    u.first_name LIKE ? OR
+                    u.last_name LIKE ? OR
+                    u.email LIKE ? OR
+                    rec.record_series_title LIKE ? OR
+                    rec.record_series_code LIKE ? OR
+                    rec_office.office_name LIKE ? OR
+                    rc.class_name LIKE ?
+                )";
+        $search_param = "%$search_filter%";
+        $change_params = array_merge($change_params, array_fill(0, 9, $search_param));
+    }
+    
+    if ($date_from) {
+        $change_logs_sql .= " AND DATE(rcl.created_at) >= ?";
+        $change_params[] = $date_from;
+    }
+    
+    if ($date_to) {
+        $change_logs_sql .= " AND DATE(rcl.created_at) <= ?";
+        $change_params[] = $date_to;
+    }
+    
+    if ($action_type && $action_type !== 'all' && $action_type !== 'RECORD_CREATED') {
+        if ($action_type === 'field_change') {
+            $change_logs_sql .= " AND rcl.field_name != 'status'";
+        } elseif ($action_type === 'STATUS_CHANGED') {
+            $change_logs_sql .= " AND rcl.field_name = 'status'";
+        } elseif ($action_type === 'FIELD_CHANGED') {
+            $change_logs_sql .= " AND rcl.field_name != 'status'";
+        } else {
+            $change_logs_sql .= " AND rcl.field_name = ?";
+            $change_params[] = $action_type;
         }
     }
-
-    // Group by to avoid duplicate rows
-    $sql .= " GROUP BY r.record_id";
-    $sql .= " ORDER BY r.record_id DESC";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // ========== QUERY 4: DISPOSAL REQUEST CREATION ==========
+    $request_logs_sql = "SELECT 
+                            dr.request_id,
+                            NULL as record_id,
+                            dr.request_date as action_date,
+                            dr.requested_by,
+                            u.office_id as office_id,
+                            'REQUEST_CREATED' as action_type,
+                            NULL as status_from,
+                            dr.status as status_to,
+                            CONCAT('Disposal request created for agency: ', dr.agency_name) as notes,
+                            dr.request_id as original_request_id,
+                            NULL as schedule_id,
+                            
+                            -- User who created the request
+                            u.first_name,
+                            u.last_name,
+                            u.email as user_email,
+                            
+                            -- User's role
+                            ur.role_name,
+                            
+                            -- User's office
+                            uo.office_name as user_office_name,
+                            
+                            -- Request agency
+                            dr.agency_name,
+                            
+                            -- Request details
+                            dr.remarks,
+                            
+                            -- Additional info
+                            NULL as record_series_code,
+                            NULL as record_series_title,
+                            NULL as record_office_name,
+                            NULL as class_name
+                            
+                        FROM disposal_requests dr
+                        
+                        LEFT JOIN users u ON dr.requested_by = u.user_id
+                        LEFT JOIN roles ur ON u.role_id = ur.role_id
+                        LEFT JOIN offices uo ON u.office_id = uo.office_id
+                        
+                        WHERE 1=1";
+    
+    $request_params = [];
+    
+    // Apply filters for request logs
+    if ($search_filter) {
+        $request_logs_sql .= " AND (
+                    dr.agency_name LIKE ? OR 
+                    dr.remarks LIKE ? OR
+                    u.first_name LIKE ? OR
+                    u.last_name LIKE ? OR
+                    u.email LIKE ? OR
+                    uo.office_name LIKE ?
+                )";
+        $search_param = "%$search_filter%";
+        $request_params = array_merge($request_params, array_fill(0, 6, $search_param));
+    }
+    
+    if ($date_from) {
+        $request_logs_sql .= " AND DATE(dr.request_date) >= ?";
+        $request_params[] = $date_from;
+    }
+    
+    if ($date_to) {
+        $request_logs_sql .= " AND DATE(dr.request_date) <= ?";
+        $request_params[] = $date_to;
+    }
+    
+    if ($action_type && $action_type === 'REQUEST_CREATED') {
+        $request_logs_sql .= " AND 1=1"; // Always true for request creation filter
+    }
+    
+    // Execute all queries
+    $all_logs = [];
+    
+    // Get creation logs
+    $creation_stmt = $pdo->prepare($creation_logs_sql . " ORDER BY r.date_created DESC");
+    $creation_stmt->execute($creation_params);
+    $creation_logs = $creation_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($creation_logs as $log) {
+        $log['log_type'] = 'creation';
+        $log['log_id'] = 'CR-' . $log['record_id'];
+        $log['entity_id'] = $log['record_id'];
+        $all_logs[] = $log;
+    }
+    
+    // Get disposal action logs
+    $disposal_stmt = $pdo->prepare($disposal_logs_sql . " ORDER BY dal.performed_at DESC");
+    $disposal_stmt->execute($disposal_params);
+    $disposal_logs = $disposal_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($disposal_logs as $log) {
+        $log['log_type'] = 'disposal_action';
+        $log['log_id'] = 'DA-' . $log['action_id'];
+        $log['entity_id'] = $log['record_id'] ?: $log['request_id'] ?: $log['action_id'];
+        $all_logs[] = $log;
+    }
+    
+    // Get record change logs
+    $change_stmt = $pdo->prepare($change_logs_sql . " ORDER BY rcl.created_at DESC");
+    $change_stmt->execute($change_params);
+    $change_logs = $change_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($change_logs as $log) {
+        $log['log_type'] = 'record_change';
+        $log['log_id'] = 'RC-' . $log['change_id'];
+        $log['entity_id'] = $log['record_id'];
+        $all_logs[] = $log;
+    }
+    
+    // Get disposal request creation logs
+    $request_stmt = $pdo->prepare($request_logs_sql . " ORDER BY dr.request_date DESC");
+    $request_stmt->execute($request_params);
+    $request_logs = $request_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($request_logs as $log) {
+        $log['log_type'] = 'request_creation';
+        $log['log_id'] = 'DR-' . $log['request_id'];
+        $log['entity_id'] = $log['request_id'];
+        $all_logs[] = $log;
+    }
+    
+    // Sort all logs by timestamp (newest first)
+    usort($all_logs, function($a, $b) {
+        $dateA = strtotime($a['action_date'] ?? '1970-01-01');
+        $dateB = strtotime($b['action_date'] ?? '1970-01-01');
+        return $dateB - $dateA;
+    });
+    
+    // Assign sequential IDs for display
+    foreach ($all_logs as $index => $log) {
+        $all_logs[$index]['display_id'] = $index + 1;
+    }
+    
+    $logs = $all_logs;
     $total_logs = count($logs);
-
+    
     // Get unique action types for filter dropdown
-    $available_action_types = [
-        'Active',
-        'Retention Reached',
-        'Archived',
-        'Disposed',
-        'Pending',
-        'Approved',
-        'Rejected'
-    ];
-
+    $action_types_sql = "SELECT DISTINCT action_type FROM disposal_action_log 
+                        UNION 
+                        SELECT 'RECORD_CREATED' 
+                        UNION 
+                        SELECT 'REQUEST_CREATED' 
+                        UNION 
+                        SELECT 'FIELD_CHANGED' 
+                        UNION 
+                        SELECT 'STATUS_CHANGED' 
+                        ORDER BY action_type";
+    $action_types_stmt = $pdo->query($action_types_sql);
+    $action_types = $action_types_stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    // Get unique field names for filter dropdown
+    $field_names_sql = "SELECT DISTINCT field_name FROM record_change_log ORDER BY field_name";
+    $field_names_stmt = $pdo->query($field_names_sql);
+    $field_names = $field_names_stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    $available_action_types = array_merge(
+        ['all' => 'All Actions'],
+        $action_types
+    );
+    
     // Group logs by month for sidebar
     $logs_by_month = [];
     foreach ($logs as $log) {
-        $year_month = date('Y-m', strtotime($log['record_created_date']));
+        $timestamp = $log['action_date'] ?? null;
+        if (!$timestamp || $timestamp === '0000-00-00 00:00:00') continue;
+        
+        $year_month = date('Y-m', strtotime($timestamp));
+        $month_name = date('F Y', strtotime($timestamp));
+        
         if (!isset($logs_by_month[$year_month])) {
             $logs_by_month[$year_month] = [
-                'month_year' => date('F Y', strtotime($log['record_created_date'])),
+                'month_year' => $month_name,
                 'logs' => []
             ];
         }
         $logs_by_month[$year_month]['logs'][] = $log;
     }
-
+    
     // Group logs by type for sidebar
     $logs_by_type = [];
     foreach ($logs as $log) {
-        $log_type = $log['retention_status'];
-        if ($log_type) {
-            if (!isset($logs_by_type[$log_type])) {
-                $logs_by_type[$log_type] = [
-                    'type' => $log_type,
-                    'logs' => []
-                ];
-            }
-            $logs_by_type[$log_type]['logs'][] = $log;
+        $type_key = $log['log_type'] ?? 'other';
+        
+        $type_names = [
+            'creation' => 'Record Creation',
+            'disposal_action' => 'Disposal Actions',
+            'record_change' => 'Record Changes',
+            'request_creation' => 'Request Creation',
+            'other' => 'Other Actions'
+        ];
+        
+        $type_name = $type_names[$type_key] ?? ucfirst(str_replace('_', ' ', $type_key));
+        
+        if (!isset($logs_by_type[$type_key])) {
+            $logs_by_type[$type_key] = [
+                'type' => $type_name,
+                'logs' => []
+            ];
         }
+        $logs_by_type[$type_key]['logs'][] = $log;
     }
-
+    
     // Group logs by user for sidebar
     $logs_by_user = [];
     foreach ($logs as $log) {
-        $user_name = $log['creator_name'] ?? 'Unknown';
-        if ($user_name && trim($user_name) !== '' && $user_name !== 'Unknown') {
+        $user_name = '';
+        
+        if (isset($log['first_name']) && isset($log['last_name'])) {
+            $user_name = trim($log['first_name'] . ' ' . $log['last_name']);
+        }
+        
+        if ($user_name && $user_name !== '' && $user_name !== 'Unknown' && $user_name !== 'System') {
             if (!isset($logs_by_user[$user_name])) {
                 $logs_by_user[$user_name] = [
                     'user' => $user_name,
@@ -253,197 +534,184 @@ try {
             $logs_by_user[$user_name]['logs'][] = $log;
         }
     }
+    
 } catch (PDOException $e) {
     error_log("Database error in reports.php: " . $e->getMessage());
     $error = "Database error occurred: " . $e->getMessage();
 }
 
-// Function to get CSS class for status
-function getStatusClass($status)
-{
-    if (!$status) return 'status-pending';
-
-    $lowerStatus = strtolower($status);
-    if ($lowerStatus === 'active' || $lowerStatus === 'approved') return 'status-success';
-    if ($lowerStatus === 'inactive' || $lowerStatus === 'pending' || $lowerStatus === 'scheduled for disposal') return 'status-pending';
-    if ($lowerStatus === 'rejected') return 'status-failed';
-    if ($lowerStatus === 'archived') return 'status-archive';
-    if ($lowerStatus === 'disposed') return 'status-disposed';
-    if ($lowerStatus === 'retention period reached') return 'status-warning';
+// Function to get CSS class for action type
+function getActionClass($action_type) {
+    if (!$action_type) return 'status-pending';
+    
+    $lowerAction = strtolower($action_type);
+    
+    // Record creation
+    if (strpos($lowerAction, 'create') !== false) return 'status-info';
+    
+    // Approval actions
+    if (strpos($lowerAction, 'approve') !== false) return 'status-success';
+    
+    // Rejection actions
+    if (strpos($lowerAction, 'reject') !== false) return 'status-failed';
+    
+    // Update/change actions
+    if (strpos($lowerAction, 'update') !== false || 
+        strpos($lowerAction, 'change') !== false || 
+        strpos($lowerAction, 'edit') !== false) return 'status-warning';
+    
+    // Completion actions
+    if (strpos($lowerAction, 'complete') !== false) return 'status-success';
+    
+    // Archive actions
+    if (strpos($lowerAction, 'archive') !== false) return 'status-archive';
+    
+    // Disposal actions
+    if (strpos($lowerAction, 'disposal') !== false) return 'status-disposed';
+    
+    // Submission actions
+    if (strpos($lowerAction, 'submit') !== false) return 'status-info';
+    
+    // Default
     return 'status-pending';
 }
 
-// Function to format date display
-function formatDateDisplay($date)
-{
-    if (!$date || $date === '0000-00-00' || $date === '0000-00-00 00:00:00') return '-';
-    return date('Y-m-d', strtotime($date));
+// Function to format date time display
+function formatDateTimeDisplay($datetime) {
+    if (!$datetime || $datetime === '0000-00-00' || $datetime === '0000-00-00 00:00:00') return '-';
+    return date('M d, Y h:i A', strtotime($datetime));
 }
 
-// Function to get user office display (shows "Admin" for admin users)
-function getUserOfficeDisplay($log, $user_type = 'creator')
-{
-    $role_field = '';
-    $office_field = '';
-
-    // Map user type to correct field names
-    switch ($user_type) {
-        case 'creator':
-            $role_field = 'creator_role';
-            $office_field = 'creator_office_name';
-            break;
-        case 'disposal_creator':
-            $role_field = 'disposal_creator_role';
-            $office_field = 'disposal_creator_office';
-            break;
-        case 'approver':
-            $role_field = 'approver_role';
-            $office_field = 'approver_office';
-            break;
-        case 'rejector':
-            $role_field = 'rejector_role';
-            $office_field = 'rejector_office';
-            break;
-        default:
-            $role_field = 'creator_role';
-            $office_field = 'creator_office_name';
+// Function to get user display name
+function getUserDisplayName($log) {
+    $name = '';
+    if (isset($log['first_name']) && isset($log['last_name'])) {
+        $name = trim($log['first_name'] . ' ' . $log['last_name']);
     }
-
-    // Check if role contains "admin"
-    if (isset($log[$role_field]) && stripos($log[$role_field], 'admin') !== false) {
-        return 'Admin';
-    }
-
-    // Return office name or 'N/A'
-    return $log[$office_field] ?? 'N/A';
-}
-
-// Function to get display name with role indicator
-function getUserDisplayName($log, $user_type = 'creator')
-{
-    $name_field = '';
-    $role_field = '';
-
-    // Map user type to correct field names
-    switch ($user_type) {
-        case 'creator':
-            $name_field = 'creator_name';
-            $role_field = 'creator_role';
-            break;
-        case 'disposal_creator':
-            $name_field = 'disposal_creator_name';
-            $role_field = 'disposal_creator_role';
-            break;
-        case 'approver':
-            $name_field = 'approver_name';
-            $role_field = 'approver_role';
-            break;
-        case 'rejector':
-            $name_field = 'rejector_name';
-            $role_field = 'rejector_role';
-            break;
-        default:
-            $name_field = 'creator_name';
-            $role_field = 'creator_role';
-    }
-
-    $name = $log[$name_field] ?? '';
-    $role = $log[$role_field] ?? null;
-
-    if (!$name || trim($name) === '') {
-        return 'Unknown';
-    }
-
-    // Add role indicator if admin
-    if ($role && stripos($role, 'admin') !== false) {
-        return htmlspecialchars($name) . ' <span class="role-badge admin">(Admin)</span>';
-    }
-
-    return htmlspecialchars($name);
-}
-
-// Function to get action user display name (for approver/rejector)
-function getActionUserDisplayName($log)
-{
-    $action_type = $log['disposal_request_status'] ?? '';
     
-    if ($action_type === 'Approved') {
-        $name = $log['approver_name'] ?? '';
-        $role = $log['approver_role'] ?? null;
-
-        if (!$name || trim($name) === '') {
-            return 'N/A';
+    if ($name && trim($name) !== '') {
+        $display_name = htmlspecialchars($name);
+        
+        // Add role badge if admin
+        if (isset($log['role_name']) && stripos($log['role_name'], 'admin') !== false) {
+            $display_name .= ' <span class="role-badge admin">(Admin)</span>';
         }
+        
+        return $display_name;
+    } else {
+        return 'System';
+    }
+}
 
-        // Add role indicator if admin
-        if ($role && stripos($role, 'admin') !== false) {
-            return htmlspecialchars($name) . ' <span class="role-badge admin">(Admin)</span>';
+// Function to get user office display
+function getUserOfficeDisplay($log) {
+    if (isset($log['user_office_name']) && $log['user_office_name']) {
+        // Check if user is admin
+        if (isset($log['role_name']) && stripos($log['role_name'], 'admin') !== false) {
+            return 'Admin';
         }
-
-        return htmlspecialchars($name);
-    } elseif ($action_type === 'Rejected') {
-        $name = $log['rejector_name'] ?? '';
-        $role = $log['rejector_role'] ?? null;
-
-        if (!$name || trim($name) === '') {
-            return 'N/A';
-        }
-
-        // Add role indicator if admin
-        if ($role && stripos($role, 'admin') !== false) {
-            return htmlspecialchars($name) . ' <span class="role-badge admin">(Admin)</span>';
-        }
-
-        return htmlspecialchars($name);
+        return htmlspecialchars($log['user_office_name']);
     }
     
     return 'N/A';
 }
 
-// Function to get action user office display
-function getActionUserOfficeDisplay($log)
-{
-    $action_type = $log['disposal_request_status'] ?? '';
+// Function to get action description
+function getActionDescription($log) {
+    $action_type = $log['action_type'] ?? '';
+    $record_title = $log['record_series_title'] ?? '';
+    $agency_name = $log['agency_name'] ?? '';
+    $field_name = $log['field_name'] ?? '';
     
-    if ($action_type === 'Approved') {
-        $role_field = 'approver_role';
-        $office_field = 'approver_office';
-
-        // Check if role contains "admin"
-        if (isset($log[$role_field]) && stripos($log[$role_field], 'admin') !== false) {
-            return 'Admin';
+    if ($log['log_type'] === 'creation') {
+        return 'Record Created: ' . htmlspecialchars($record_title);
+    } elseif ($log['log_type'] === 'disposal_action') {
+        $desc = htmlspecialchars($action_type);
+        if ($record_title) {
+            $desc .= ' - ' . htmlspecialchars($record_title);
+        } elseif ($agency_name) {
+            $desc .= ' - ' . htmlspecialchars($agency_name);
         }
-
-        // Return office name or 'N/A'
-        return $log[$office_field] ?? 'N/A';
-    } elseif ($action_type === 'Rejected') {
-        $role_field = 'rejector_role';
-        $office_field = 'rejector_office';
-
-        // Check if role contains "admin"
-        if (isset($log[$role_field]) && stripos($log[$role_field], 'admin') !== false) {
-            return 'Admin';
+        return $desc;
+    } elseif ($log['log_type'] === 'record_change') {
+        $desc = 'Field Changed: ' . htmlspecialchars($field_name);
+        if ($record_title) {
+            $desc .= ' in ' . htmlspecialchars($record_title);
         }
-
-        // Return office name or 'N/A'
-        return $log[$office_field] ?? 'N/A';
+        return $desc;
+    } elseif ($log['log_type'] === 'request_creation') {
+        return 'Disposal Request Created: ' . htmlspecialchars($agency_name);
     }
     
-    return 'N/A';
+    return 'System Activity';
 }
 
-// Function to get action date
-function getActionDate($log)
-{
-    $action_type = $log['disposal_request_status'] ?? '';
+// Function to get icon for action type
+function getActionIcon($log) {
+    $action_type = strtolower($log['action_type'] ?? '');
     
-    if ($action_type === 'Approved') {
-        return $log['disposal_approved_at'] ?? null;
-    } elseif ($action_type === 'Rejected') {
-        return $log['disposal_rejected_at'] ?? null;
+    if ($log['log_type'] === 'creation') {
+        return 'fas fa-plus-circle';
+    } elseif ($log['log_type'] === 'disposal_action') {
+        if (strpos($action_type, 'approve') !== false) return 'fas fa-check-circle';
+        if (strpos($action_type, 'reject') !== false) return 'fas fa-times-circle';
+        if (strpos($action_type, 'create') !== false) return 'fas fa-plus-circle';
+        if (strpos($action_type, 'update') !== false) return 'fas fa-edit';
+        if (strpos($action_type, 'complete') !== false) return 'fas fa-check-circle';
+        if (strpos($action_type, 'archive') !== false) return 'fas fa-archive';
+        if (strpos($action_type, 'disposal') !== false) return 'fas fa-trash';
+        if (strpos($action_type, 'submit') !== false) return 'fas fa-paper-plane';
+        return 'fas fa-history';
+    } elseif ($log['log_type'] === 'record_change') {
+        return 'fas fa-exchange-alt';
+    } elseif ($log['log_type'] === 'request_creation') {
+        return 'fas fa-file-alt';
     }
     
-    return null;
+    return 'fas fa-history';
+}
+
+// Function to get record link if available
+function getRecordLink($log) {
+    if (isset($log['record_id']) && $log['record_id']) {
+        return 'record_view.php?id=' . $log['record_id'];
+    }
+    return '#';
+}
+
+// Function to get display value for a field change
+function getFieldDisplayValue($log) {
+    if (($log['log_type'] ?? '') !== 'record_change') return '';
+    
+    $field_type = $log['field_type'] ?? 'text';
+    
+    switch ($field_type) {
+        case 'text':
+            $old_val = $log['old_value_text'] ?: 'Empty';
+            $new_val = $log['new_value_text'] ?: 'Empty';
+            break;
+        case 'number':
+            $old_val = $log['old_value_int'] !== null ? $log['old_value_int'] : 'Empty';
+            $new_val = $log['new_value_int'] !== null ? $log['new_value_int'] : 'Empty';
+            break;
+        case 'date':
+            $old_val = $log['old_value_date'] ? date('Y-m-d', strtotime($log['old_value_date'])) : 'Empty';
+            $new_val = $log['new_value_date'] ? date('Y-m-d', strtotime($log['new_value_date'])) : 'Empty';
+            break;
+        case 'enum':
+            $old_val = $log['old_value_enum'] ?: 'Empty';
+            $new_val = $log['new_value_enum'] ?: 'Empty';
+            break;
+        case 'foreign_key':
+            $old_val = $log['old_reference_name'] ?: $log['old_reference_id'] ?: 'Empty';
+            $new_val = $log['new_reference_name'] ?: $log['new_reference_id'] ?: 'Empty';
+            break;
+        default:
+            $old_val = 'N/A';
+            $new_val = 'N/A';
+    }
+    
+    return htmlspecialchars($old_val) . ' <span class="arrow">→</span> ' . htmlspecialchars($new_val);
 }
 ?>
 <!DOCTYPE html>
@@ -457,7 +725,7 @@ function getActionDate($log)
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <title>Report & Logs</title>
+    <title>System Audit Logs</title>
     <style>
         /* Main container */
         .archive-container {
@@ -745,11 +1013,6 @@ function getActionDate($log)
             font-size: 11px;
         }
 
-        .retention-warning,
-        .retention-info {
-            margin-top: 5px;
-        }
-
         .disposal-badge {
             margin-top: 8px;
             padding-top: 8px;
@@ -758,7 +1021,6 @@ function getActionDate($log)
 
         /* Action buttons */
         .view-details-btn,
-        .request-details-btn,
         .close-details-btn {
             padding: 6px 12px;
             border: none;
@@ -779,17 +1041,6 @@ function getActionDate($log)
 
         .view-details-btn:hover {
             background: #152852;
-        }
-
-        .request-details-btn {
-            background: #f8f9fa;
-            color: #1f366c;
-            border: 1px solid #ddd;
-            margin-left: 5px;
-        }
-
-        .request-details-btn:hover {
-            background: #e9ecef;
         }
 
         /* Details panel improvements */
@@ -896,6 +1147,12 @@ function getActionDate($log)
             background-color: #e8daef;
             color: #512e5f;
             border: 1px solid #dcc6e8;
+        }
+
+        .status-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
         }
 
         .status-warning {
@@ -1166,6 +1423,22 @@ function getActionDate($log)
             font-weight: 600;
         }
 
+        /* Value change display */
+        .value-change {
+            background: #f8f9fa;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            display: inline-block;
+        }
+
+        .arrow {
+            color: #1f366c;
+            margin: 0 5px;
+            font-weight: bold;
+        }
+
         /* Responsive */
         @media (max-width: 1200px) {
             .details-grid {
@@ -1209,8 +1482,8 @@ function getActionDate($log)
     <main>
         <header class="header">
             <div class="header-title-block">
-                <h1>RECORDS & REQUESTS REPORT</h1>
-                <p>Showing records with creator information</p>
+                <h1>SYSTEM AUDIT LOGS</h1>
+                <p>Track all system activities - record creation, changes, and disposal actions</p>
             </div>
         </header>
 
@@ -1225,21 +1498,21 @@ function getActionDate($log)
             <!-- Folders Sidebar -->
             <div class="folders-sidebar">
                 <div class="folders-header">
-                    <h3>Report Categories</h3>
+                    <h3>Log Categories</h3>
                 </div>
 
                 <!-- All Logs Folder -->
                 <div class="folder-group">
                     <div class="folder-group-title">
                         <i class="fas fa-archive"></i>
-                        <span>All Records</span>
+                        <span>All Activities</span>
                     </div>
                     <div class="folders-list">
                         <div class="folder-item active" onclick="showAllLogs()" id="allLogsFolder">
                             <i class="fas fa-boxes folder-icon"></i>
                             <div class="folder-info">
-                                <div class="folder-name">All Records & Requests</div>
-                                <div class="folder-count"><?= $total_logs ?> records</div>
+                                <div class="folder-name">All System Activities</div>
+                                <div class="folder-count"><?= $total_logs ?> entries</div>
                             </div>
                         </div>
                     </div>
@@ -1256,8 +1529,8 @@ function getActionDate($log)
                             <?php
                             krsort($logs_by_month);
                             foreach ($logs_by_month as $month_key => $month_data):
-                                $record_count = count($month_data['logs']);
-                                if ($record_count > 0):
+                                $log_count = count($month_data['logs']);
+                                if ($log_count > 0):
                             ?>
                                     <div class="folder-item month-folder"
                                         onclick="showMonthLogs('<?= $month_key ?>', '<?= htmlspecialchars($month_data['month_year']) ?>')"
@@ -1265,7 +1538,7 @@ function getActionDate($log)
                                         <i class="fas fa-folder folder-icon" style="color: #1976d2;"></i>
                                         <div class="folder-info">
                                             <div class="folder-name"><?= $month_data['month_year'] ?></div>
-                                            <div class="folder-count"><?= $record_count ?> records</div>
+                                            <div class="folder-count"><?= $log_count ?> entries</div>
                                         </div>
                                     </div>
                             <?php endif;
@@ -1274,25 +1547,24 @@ function getActionDate($log)
                     </div>
                 <?php endif; ?>
 
-                <!-- Status Folders -->
+                <!-- Type Folders -->
                 <?php if (!empty($logs_by_type)): ?>
                     <div class="folder-group">
                         <div class="folder-group-title">
                             <i class="fas fa-tags"></i>
-                            <span>By Status</span>
+                            <span>By Activity Type</span>
                         </div>
                         <div class="folders-list">
-                            <?php foreach ($logs_by_type as $type => $type_data):
-                                $record_count = count($type_data['logs']);
-                                if ($record_count > 0):
-                                    $display_name = ucwords(strtolower($type));
+                            <?php foreach ($logs_by_type as $type_key => $type_data):
+                                $log_count = count($type_data['logs']);
+                                if ($log_count > 0):
                             ?>
-                                    <div class="folder-item type-folder" onclick="showTypeLogs('<?= htmlspecialchars($type) ?>')"
-                                        data-type="<?= htmlspecialchars($type) ?>">
+                                    <div class="folder-item type-folder" onclick="showTypeLogs('<?= $type_key ?>')"
+                                        data-type="<?= $type_key ?>">
                                         <i class="fas fa-folder folder-icon" style="color: #28a745;"></i>
                                         <div class="folder-info">
-                                            <div class="folder-name"><?= htmlspecialchars($display_name) ?></div>
-                                            <div class="folder-count"><?= $record_count ?> records</div>
+                                            <div class="folder-name"><?= htmlspecialchars($type_data['type']) ?></div>
+                                            <div class="folder-count"><?= $log_count ?> entries</div>
                                         </div>
                                     </div>
                             <?php endif;
@@ -1306,18 +1578,18 @@ function getActionDate($log)
                     <div class="folder-group">
                         <div class="folder-group-title">
                             <i class="fas fa-users"></i>
-                            <span>By Creator</span>
+                            <span>By User</span>
                         </div>
                         <div class="folders-list">
                             <?php foreach ($logs_by_user as $user_name => $user_data):
-                                $record_count = count($user_data['logs']);
-                                if ($record_count > 0): ?>
+                                $log_count = count($user_data['logs']);
+                                if ($log_count > 0): ?>
                                     <div class="folder-item user-folder" onclick="showUserLogs('<?= htmlspecialchars($user_name) ?>')"
                                         data-user="<?= htmlspecialchars($user_name) ?>">
                                         <i class="fas fa-folder folder-icon" style="color: #ff9800;"></i>
                                         <div class="folder-info">
                                             <div class="folder-name"><?= htmlspecialchars($user_name) ?></div>
-                                            <div class="folder-count"><?= $record_count ?> records</div>
+                                            <div class="folder-count"><?= $log_count ?> entries</div>
                                         </div>
                                     </div>
                             <?php endif;
@@ -1331,8 +1603,8 @@ function getActionDate($log)
             <div class="records-main">
                 <div class="header-actions">
                     <div class="current-folder-info">
-                        <h2 id="currentFolderTitle">All Records & Requests</h2>
-                        <p id="currentFolderSubtitle">Browse records with creator info, disposal requests, and retention status</p>
+                        <h2 id="currentFolderTitle">System Activities Timeline</h2>
+                        <p id="currentFolderSubtitle">Track all record creation, changes, and disposal actions</p>
                     </div>
                 </div>
 
@@ -1343,7 +1615,7 @@ function getActionDate($log)
                         <div class="filter-group">
                             <label for="search_filter">SEARCH</label>
                             <input type="text" id="search_filter" name="search_filter" class="filter-input"
-                                placeholder="Search records, creators, agencies..."
+                                placeholder="Search actions, users, records, agencies..."
                                 value="<?= htmlspecialchars($search_filter) ?>">
                         </div>
 
@@ -1361,18 +1633,40 @@ function getActionDate($log)
                                 value="<?= htmlspecialchars($date_to) ?>">
                         </div>
 
-                        <!-- Status Filter Field -->
+                        <!-- Action Type Filter Field -->
                         <div class="filter-group">
-                            <label for="action_type">STATUS FILTER</label>
+                            <label for="action_type">ACTION TYPE</label>
                             <select id="action_type" name="action_type" class="filter-input">
-                                <option value="">All Status</option>
-                                <?php foreach ($available_action_types as $type):
-                                    if (!empty($type)): ?>
-                                        <option value="<?= htmlspecialchars($type) ?>" <?= $action_type == $type ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($type) ?>
-                                        </option>
-                                <?php endif;
-                                endforeach; ?>
+                                <option value="all">All Actions</option>
+                                <optgroup label="Record Actions">
+                                    <option value="RECORD_CREATED" <?= $action_type == 'RECORD_CREATED' ? 'selected' : '' ?>>Record Created</option>
+                                    <option value="FIELD_CHANGED" <?= $action_type == 'FIELD_CHANGED' ? 'selected' : '' ?>>Field Changed</option>
+                                    <option value="STATUS_CHANGED" <?= $action_type == 'STATUS_CHANGED' ? 'selected' : '' ?>>Status Changed</option>
+                                </optgroup>
+                                <optgroup label="Disposal Actions">
+                                    <option value="REQUEST_CREATED" <?= $action_type == 'REQUEST_CREATED' ? 'selected' : '' ?>>Request Created</option>
+                                    <?php 
+                                    // Display disposal action types
+                                    $disposal_actions = ['REQUEST_SUBMIT', 'REQUEST_APPROVE', 'REQUEST_REJECT', 'DISPOSAL_COMPLETE', 'ARCHIVE_COMPLETE'];
+                                    foreach ($disposal_actions as $action):
+                                        if (in_array($action, $action_types)): ?>
+                                            <option value="<?= htmlspecialchars($action) ?>" <?= $action_type == $action ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars(str_replace('_', ' ', $action)) ?>
+                                            </option>
+                                    <?php endif;
+                                    endforeach; ?>
+                                </optgroup>
+                                <?php 
+                                // Field changes
+                                if (!empty($field_names)): ?>
+                                    <optgroup label="Specific Field Changes">
+                                        <?php foreach ($field_names as $field): ?>
+                                            <option value="<?= htmlspecialchars($field) ?>" <?= $action_type == $field ? 'selected' : '' ?>>
+                                                <?= htmlspecialchars(str_replace('_', ' ', ucfirst(strtolower($field)))) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                <?php endif; ?>
                             </select>
                         </div>
 
@@ -1390,8 +1684,8 @@ function getActionDate($log)
 
                 <div class="folder-content">
                     <div class="folder-content-header">
-                        <h3 id="folderContentTitle">Records & Requests</h3>
-                        <p id="folderContentSubtitle"><?= $total_logs ?> records found</p>
+                        <h3 id="folderContentTitle">Activities Timeline</h3>
+                        <p id="folderContentSubtitle"><?= $total_logs ?> activity entries found</p>
                     </div>
 
                     <div class="folder-records-container">
@@ -1399,10 +1693,10 @@ function getActionDate($log)
                         <table class="records-table-view">
                             <thead>
                                 <tr>
-                                    <th width="100">RECORD</th>
-                                    <th width="150">BASIC INFO</th>
-                                    <th width="120">CREATOR</th>
-                                    <th width="120">STATUS</th>
+                                    <th width="80">LOG #</th>
+                                    <th width="150">ACTION</th>
+                                    <th width="120">USER</th>
+                                    <th width="120">DETAILS</th>
                                     <th width="80">ACTIONS</th>
                                 </tr>
                             </thead>
@@ -1414,111 +1708,113 @@ function getActionDate($log)
                                                 <div class="empty-state-icon">
                                                     <i class="fas fa-clipboard-list"></i>
                                                 </div>
-                                                <h3>No Records Found</h3>
+                                                <h3>No Activity Found</h3>
                                                 <p><?= $search_filter || $date_from || $date_to || $action_type ?
-                                                        'No records found matching your filters.' :
-                                                        'No records have been created yet.' ?></p>
+                                                        'No activities found matching your filters.' :
+                                                        'No system activity has been logged yet.' ?></p>
                                             </div>
                                         </td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($logs as $log):
-                                        $record_status_class = getStatusClass($log['record_status']);
-                                        $retention_status_class = getStatusClass($log['retention_status']);
-                                        $record_id_padded = str_pad($log['record_id'], 5, '0', STR_PAD_LEFT);
-                                        $creator_name = getUserDisplayName($log, 'creator');
-                                        $creator_office = getUserOfficeDisplay($log, 'creator');
-                                        
-                                        // Determine main status display
-                                        if (!empty($log['disposal_request_status'])) {
-                                            $main_status = $log['disposal_request_status'];
-                                            $main_status_class = getStatusClass($main_status);
-                                        } else {
-                                            $main_status = $log['retention_status'];
-                                            $main_status_class = $retention_status_class;
-                                        }
+                                        $display_id = str_pad($log['display_id'], 5, '0', STR_PAD_LEFT);
+                                        $action_class = getActionClass($log['action_type']);
+                                        $user_name = getUserDisplayName($log);
+                                        $user_office = getUserOfficeDisplay($log);
+                                        $action_desc = getActionDescription($log);
+                                        $icon = getActionIcon($log);
+                                        $record_link = getRecordLink($log);
+                                        $record_id = $log['record_id'] ?? null;
                                     ?>
-                                        <tr id="log-row-<?= $log['record_id'] ?>">
-                                            <!-- Record Column -->
+                                        <tr id="log-row-<?= $log['display_id'] ?>">
+                                            <!-- Log ID Column -->
                                             <td>
                                                 <div class="record-badge">
-                                                    <span class="record-id">R<?= $record_id_padded ?></span>
+                                                    <span class="record-id">L<?= $display_id ?></span>
                                                 </div>
                                                 <div class="record-code">
-                                                    <?= htmlspecialchars($log['record_series_code']) ?>
+                                                    <?= htmlspecialchars(date('m/d/Y', strtotime($log['action_date']))) ?>
                                                 </div>
                                             </td>
                                             
-                                            <!-- Basic Info Column -->
+                                            <!-- Action Column -->
                                             <td>
                                                 <div class="record-title">
-                                                    <strong><?= htmlspecialchars($log['record_series_title']) ?></strong>
+                                                    <strong><?= $action_desc ?></strong>
                                                 </div>
                                                 <div class="record-meta">
                                                     <span class="meta-item">
-                                                        <i class="fas fa-building"></i> <?= htmlspecialchars($log['office_name']) ?>
+                                                        <i class="fas fa-calendar"></i> <?= formatDateTimeDisplay($log['action_date']) ?>
                                                     </span>
-                                                    <span class="meta-item">
-                                                        <i class="fas fa-calendar"></i> <?= formatDateDisplay($log['record_created_date']) ?>
-                                                    </span>
-                                                    <span class="meta-item">
-                                                        <i class="fas fa-tag"></i> <?= htmlspecialchars($log['class_name']) ?>
-                                                    </span>
+                                                    <?php if ($log['record_series_title']): ?>
+                                                        <span class="meta-item">
+                                                            <i class="fas fa-file-alt"></i> 
+                                                            <?= $record_link !== '#' ? 
+                                                                '<a href="' . $record_link . '" target="_blank" style="color: #1f366c;">' . 
+                                                                htmlspecialchars($log['record_series_title']) . '</a>' : 
+                                                                htmlspecialchars($log['record_series_title']) ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                    <?php if ($log['record_office_name']): ?>
+                                                        <span class="meta-item">
+                                                            <i class="fas fa-building"></i> <?= htmlspecialchars($log['record_office_name']) ?>
+                                                        </span>
+                                                    <?php endif; ?>
                                                 </div>
                                             </td>
                                             
-                                            <!-- Creator Column -->
+                                            <!-- User Column -->
                                             <td>
                                                 <div class="creator-info">
                                                     <div class="creator-name">
-                                                        <?= $creator_name ?>
+                                                        <?= $user_name ?>
                                                     </div>
                                                     <div class="creator-office">
-                                                        <small><?= htmlspecialchars($creator_office) ?></small>
+                                                        <small><?= htmlspecialchars($user_office) ?></small>
                                                     </div>
                                                 </div>
                                             </td>
                                             
-                                            <!-- Status Column -->
+                                            <!-- Details Column -->
                                             <td>
                                                 <!-- Main Status Badge -->
                                                 <div class="main-status">
-                                                    <span class="status-badge <?= $main_status_class ?>">
-                                                        <?= htmlspecialchars($main_status) ?>
+                                                    <span class="status-badge <?= $action_class ?>">
+                                                        <?= htmlspecialchars($log['action_type']) ?>
                                                     </span>
                                                 </div>
                                                 
-                                                <!-- Record Status -->
-                                                <div class="sub-status">
-                                                    <small>
-                                                        Record: 
-                                                        <span class="status-indicator <?= $record_status_class ?>">
-                                                            <?= htmlspecialchars($log['record_status']) ?>
-                                                        </span>
-                                                    </small>
-                                                </div>
-                                                
-                                                <!-- Retention Info -->
-                                                <?php if (!empty($log['retention_end_date'])): 
-                                                    $end_date = formatDateDisplay($log['retention_end_date']);
-                                                    $today = date('Y-m-d');
-                                                    if ($end_date < $today): ?>
-                                                        <div class="retention-warning">
-                                                            <small><i class="fas fa-exclamation-triangle text-danger"></i> Ended: <?= $end_date ?></small>
-                                                        </div>
-                                                    <?php else: ?>
-                                                        <div class="retention-info">
-                                                            <small><i class="fas fa-clock"></i> Ends: <?= $end_date ?></small>
-                                                        </div>
-                                                    <?php endif; ?>
+                                                <!-- Status Change -->
+                                                <?php if ($log['status_from'] && $log['status_to']): ?>
+                                                    <div class="sub-status">
+                                                        <small>
+                                                            Status: 
+                                                            <span class="status-indicator <?= getActionClass($log['status_from']) ?>">
+                                                                <?= htmlspecialchars($log['status_from']) ?>
+                                                            </span>
+                                                            <span class="arrow">→</span>
+                                                            <span class="status-indicator <?= getActionClass($log['status_to']) ?>">
+                                                                <?= htmlspecialchars($log['status_to']) ?>
+                                                            </span>
+                                                        </small>
+                                                    </div>
                                                 <?php endif; ?>
                                                 
-                                                <!-- Disposal Request Badge -->
-                                                <?php if (!empty($log['disposal_agency_name'])): ?>
+                                                <!-- Field Change -->
+                                                <?php if ($log['log_type'] === 'record_change'): ?>
+                                                    <div class="sub-status">
+                                                        <small>
+                                                            Changed: <?= htmlspecialchars($log['field_name']) ?>
+                                                        </small>
+                                                    </div>
+                                                <?php endif; ?>
+                                                
+                                                <!-- Agency Info -->
+                                                <?php if ($log['agency_name']): ?>
                                                     <div class="disposal-badge">
                                                         <small>
-                                                            <i class="fas fa-trash"></i> 
-                                                            <span class="text-primary">Disposal Requested</span>
+                                                            <i class="fas fa-building"></i> 
+                                                            <span class="text-primary"><?= htmlspecialchars($log['agency_name']) ?></span>
                                                         </small>
                                                     </div>
                                                 <?php endif; ?>
@@ -1526,144 +1822,169 @@ function getActionDate($log)
                                             
                                             <!-- Actions Column -->
                                             <td>
-                                                <button type="button" class="view-details-btn" onclick="toggleLogDetails(<?= $log['record_id'] ?>)">
+                                                <button type="button" class="view-details-btn" onclick="toggleLogDetails(<?= $log['display_id'] ?>)">
                                                     <i class="fas fa-eye"></i> View
                                                 </button>
                                             </td>
                                         </tr>
                                         
                                         <!-- Details row -->
-                                        <tr class="log-details-row" id="log-details-<?= $log['record_id'] ?>" style="display: none;">
+                                        <tr class="log-details-row" id="log-details-<?= $log['display_id'] ?>" style="display: none;">
                                             <td colspan="5">
                                                 <div class="log-details-content">
                                                     <div class="details-header">
-                                                        <h4>Record Details: R<?= $record_id_padded ?></h4>
+                                                        <h4>Activity Details: L<?= $display_id ?></h4>
                                                     </div>
                                                     
                                                     <div class="details-grid">
                                                         <!-- Left Column -->
                                                         <div class="details-column">
                                                             <div class="details-section">
-                                                                <h5><i class="fas fa-info-circle"></i> Record Information</h5>
+                                                                <h5><i class="fas fa-info-circle"></i> Activity Information</h5>
                                                                 <div class="details-item">
-                                                                    <label>Title:</label>
-                                                                    <span><?= htmlspecialchars($log['record_series_title']) ?></span>
+                                                                    <label>Type:</label>
+                                                                    <span class="status-badge <?= $action_class ?>">
+                                                                        <?= htmlspecialchars($log['action_type']) ?>
+                                                                    </span>
                                                                 </div>
                                                                 <div class="details-item">
-                                                                    <label>Code:</label>
-                                                                    <span><?= htmlspecialchars($log['record_series_code']) ?></span>
+                                                                    <label>Date & Time:</label>
+                                                                    <span><?= formatDateTimeDisplay($log['action_date']) ?></span>
                                                                 </div>
                                                                 <div class="details-item">
-                                                                    <label>Office:</label>
-                                                                    <span><?= htmlspecialchars($log['office_name']) ?></span>
+                                                                    <label>Description:</label>
+                                                                    <span><?= $action_desc ?></span>
                                                                 </div>
-                                                                <div class="details-item">
-                                                                    <label>Classification:</label>
-                                                                    <span><?= htmlspecialchars($log['class_name']) ?></span>
-                                                                </div>
+                                                                <?php if ($log['log_type'] === 'record_change'): ?>
+                                                                    <div class="details-item">
+                                                                        <label>Field:</label>
+                                                                        <span><?= htmlspecialchars($log['field_name']) ?></span>
+                                                                    </div>
+                                                                    <div class="details-item">
+                                                                        <label>Change:</label>
+                                                                        <span class="value-change">
+                                                                            <?= getFieldDisplayValue($log) ?>
+                                                                        </span>
+                                                                    </div>
+                                                                <?php endif; ?>
                                                             </div>
                                                             
-                                                            <div class="details-section">
-                                                                <h5><i class="fas fa-user"></i> Creator Information</h5>
-                                                                <div class="details-item">
-                                                                    <label>Name:</label>
-                                                                    <span><?= $creator_name ?></span>
+                                                            <?php if ($log['record_series_title'] || $log['class_name']): ?>
+                                                                <div class="details-section">
+                                                                    <h5><i class="fas fa-file-alt"></i> Record Information</h5>
+                                                                    <?php if ($log['record_series_title']): ?>
+                                                                        <div class="details-item">
+                                                                            <label>Title:</label>
+                                                                            <span>
+                                                                                <?= $record_link !== '#' ? 
+                                                                                    '<a href="' . $record_link . '" target="_blank" style="color: #1f366c;">' . 
+                                                                                    htmlspecialchars($log['record_series_title']) . '</a>' : 
+                                                                                    htmlspecialchars($log['record_series_title']) ?>
+                                                                            </span>
+                                                                        </div>
+                                                                    <?php endif; ?>
+                                                                    <?php if ($log['record_series_code']): ?>
+                                                                        <div class="details-item">
+                                                                            <label>Code:</label>
+                                                                            <span><?= htmlspecialchars($log['record_series_code']) ?></span>
+                                                                        </div>
+                                                                    <?php endif; ?>
+                                                                    <?php if ($log['record_office_name']): ?>
+                                                                        <div class="details-item">
+                                                                            <label>Office:</label>
+                                                                            <span><?= htmlspecialchars($log['record_office_name']) ?></span>
+                                                                        </div>
+                                                                    <?php endif; ?>
+                                                                    <?php if ($log['class_name']): ?>
+                                                                        <div class="details-item">
+                                                                            <label>Classification:</label>
+                                                                            <span><?= htmlspecialchars($log['class_name']) ?></span>
+                                                                        </div>
+                                                                    <?php endif; ?>
                                                                 </div>
-                                                                <div class="details-item">
-                                                                    <label>Office:</label>
-                                                                    <span><?= htmlspecialchars($creator_office) ?></span>
-                                                                </div>
-                                                                <div class="details-item">
-                                                                    <label>Created:</label>
-                                                                    <span><?= formatDateDisplay($log['record_created_date']) ?></span>
-                                                                </div>
-                                                            </div>
+                                                            <?php endif; ?>
                                                         </div>
                                                         
                                                         <!-- Right Column -->
                                                         <div class="details-column">
                                                             <div class="details-section">
-                                                                <h5><i class="fas fa-history"></i> Retention Information</h5>
+                                                                <h5><i class="fas fa-user"></i> User Information</h5>
                                                                 <div class="details-item">
-                                                                    <label>Period:</label>
-                                                                    <span><?= formatDateDisplay($log['period_from']) ?> - <?= formatDateDisplay($log['period_to']) ?></span>
+                                                                    <label>Name:</label>
+                                                                    <span><?= $user_name ?></span>
                                                                 </div>
                                                                 <div class="details-item">
-                                                                    <label>Total Years:</label>
-                                                                    <span><?= $log['total_years'] ?> years</span>
+                                                                    <label>Office:</label>
+                                                                    <span><?= htmlspecialchars($user_office) ?></span>
                                                                 </div>
                                                                 <div class="details-item">
-                                                                    <label>Retention Period:</label>
-                                                                    <span><?= htmlspecialchars($log['period_name'] ?? 'N/A') ?></span>
+                                                                    <label>Email:</label>
+                                                                    <span><?= htmlspecialchars($log['user_email'] ?? 'N/A') ?></span>
                                                                 </div>
                                                                 <div class="details-item">
-                                                                    <label>Retention Status:</label>
-                                                                    <span class="status-badge <?= $retention_status_class ?>">
-                                                                        <?= htmlspecialchars($log['retention_status']) ?>
-                                                                    </span>
+                                                                    <label>Role:</label>
+                                                                    <span><?= htmlspecialchars($log['role_name'] ?? 'N/A') ?></span>
                                                                 </div>
                                                             </div>
                                                             
-                                                            <?php if (!empty($log['disposal_agency_name'])): 
-                                                                $disposal_creator_name = getUserDisplayName($log, 'disposal_creator');
-                                                                $disposal_creator_office = getUserOfficeDisplay($log, 'disposal_creator');
-                                                                $action_user_name = getActionUserDisplayName($log);
-                                                                $action_user_office = getActionUserOfficeDisplay($log);
-                                                                $action_date = getActionDate($log);
-                                                            ?>
+                                                            <?php if ($log['status_from'] && $log['status_to']): ?>
+                                                                <div class="details-section">
+                                                                    <h5><i class="fas fa-exchange-alt"></i> Status Change</h5>
+                                                                    <div class="details-item">
+                                                                        <label>From:</label>
+                                                                        <span class="status-badge <?= getActionClass($log['status_from']) ?>">
+                                                                            <?= htmlspecialchars($log['status_from']) ?>
+                                                                        </span>
+                                                                    </div>
+                                                                    <div class="details-item">
+                                                                        <label>To:</label>
+                                                                        <span class="status-badge <?= getActionClass($log['status_to']) ?>">
+                                                                            <?= htmlspecialchars($log['status_to']) ?>
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            <?php endif; ?>
+                                                            
+                                                            <?php if ($log['agency_name']): ?>
                                                                 <div class="details-section">
                                                                     <h5><i class="fas fa-trash-alt"></i> Disposal Request</h5>
                                                                     <div class="details-item">
                                                                         <label>Agency:</label>
-                                                                        <span><?= htmlspecialchars($log['disposal_agency_name']) ?></span>
+                                                                        <span><?= htmlspecialchars($log['agency_name']) ?></span>
                                                                     </div>
-                                                                    <div class="details-item">
-                                                                        <label>Request Date:</label>
-                                                                        <span><?= formatDateDisplay($log['disposal_request_date']) ?></span>
-                                                                    </div>
-                                                                    <div class="details-item">
-                                                                        <label>Requested By:</label>
-                                                                        <span><?= $disposal_creator_name ?> (<?= htmlspecialchars($disposal_creator_office) ?>)</span>
-                                                                    </div>
-                                                                    <div class="details-item">
-                                                                        <label>Status:</label>
-                                                                        <span class="status-badge <?= getStatusClass($log['disposal_request_status']) ?>">
-                                                                            <?= htmlspecialchars($log['disposal_request_status']) ?>
-                                                                        </span>
-                                                                    </div>
-                                                                    
-                                                                    <?php if (!empty($log['disposal_remarks'])): ?>
+                                                                    <?php if ($log['request_date']): ?>
                                                                         <div class="details-item">
-                                                                            <label>Remarks:</label>
-                                                                            <span><?= htmlspecialchars($log['disposal_remarks']) ?></span>
+                                                                            <label>Request Date:</label>
+                                                                            <span><?= formatDateTimeDisplay($log['request_date']) ?></span>
                                                                         </div>
                                                                     <?php endif; ?>
-                                                                    
-                                                                    <!-- Show approver/rejector information -->
-                                                                    <?php if (in_array($log['disposal_request_status'], ['Approved', 'Rejected'])): ?>
-                                                                        <?php if ($action_date): ?>
-                                                                            <div class="details-item">
-                                                                                <label><?= $log['disposal_request_status'] ?> Date:</label>
-                                                                                <span><?= formatDateDisplay($action_date) ?></span>
-                                                                            </div>
-                                                                        <?php endif; ?>
+                                                                    <?php if ($log['request_status']): ?>
                                                                         <div class="details-item">
-                                                                            <label><?= $log['disposal_request_status'] ?> By:</label>
-                                                                            <span>
-                                                                                <?= $action_user_name ?>
-                                                                                <?php if ($action_user_office && $action_user_office !== 'N/A'): ?>
-                                                                                    (<?= htmlspecialchars($action_user_office) ?>)
-                                                                                <?php endif; ?>
+                                                                            <label>Request Status:</label>
+                                                                            <span class="status-badge <?= getActionClass($log['request_status']) ?>">
+                                                                                <?= htmlspecialchars($log['request_status']) ?>
                                                                             </span>
                                                                         </div>
                                                                     <?php endif; ?>
+                                                                </div>
+                                                            <?php endif; ?>
+                                                            
+                                                            <?php if ($log['notes'] && trim($log['notes']) !== ''): ?>
+                                                                <div class="details-section">
+                                                                    <h5><i class="fas fa-sticky-note"></i> Notes</h5>
+                                                                    <div class="details-item" style="flex-direction: column; align-items: flex-start;">
+                                                                        <label>Details:</label>
+                                                                        <span style="background: #f8f9fa; padding: 10px; border-radius: 4px; width: 100%;">
+                                                                            <?= htmlspecialchars($log['notes']) ?>
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                             <?php endif; ?>
                                                         </div>
                                                     </div>
                                                     
                                                     <div class="details-footer">
-                                                        <button type="button" class="close-details-btn" onclick="toggleLogDetails(<?= $log['record_id'] ?>)">
+                                                        <button type="button" class="close-details-btn" onclick="toggleLogDetails(<?= $log['display_id'] ?>)">
                                                             <i class="fas fa-times"></i> Close
                                                         </button>
                                                     </div>
@@ -1681,613 +2002,643 @@ function getActionDate($log)
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <script>
-        // Global variables
-        let currentFilter = 'all';
-        let currentFilterId = null;
-        let allLogs = <?= json_encode($logs) ?>;
-        let logsByMonth = <?= json_encode($logs_by_month) ?>;
-        let logsByType = <?= json_encode($logs_by_type) ?>;
-        let logsByUser = <?= json_encode($logs_by_user) ?>;
+<script>
+    // Global variables - populated from PHP
+    let currentFilter = 'all';
+    let currentFilterId = null;
+    let allLogs = <?= json_encode($logs) ?>;
+    let logsByMonth = <?= json_encode($logs_by_month) ?>;
+    let logsByType = <?= json_encode($logs_by_type) ?>;
+    let logsByUser = <?= json_encode($logs_by_user) ?>;
 
-        // Helper functions for JavaScript
-        function getUserOfficeDisplay(log, userType = 'creator') {
-            const roleField = userType + '_role';
-            const officeField = userType + '_office';
+    // Helper functions
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 
-            // Check if role contains "admin"
-            if (log[roleField] && log[roleField].toLowerCase().includes('admin')) {
+    function formatDateTimeDisplay(dateString) {
+        if (!dateString || dateString === '0000-00-00' || dateString === '0000-00-00 00:00:00') return '-';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+        }) + ' ' + date.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    }
+
+    function getActionClass(actionType) {
+        if (!actionType) return 'status-pending';
+        
+        const lowerAction = actionType.toLowerCase();
+        
+        if (lowerAction.includes('create')) return 'status-info';
+        if (lowerAction.includes('approve')) return 'status-success';
+        if (lowerAction.includes('reject')) return 'status-failed';
+        if (lowerAction.includes('update') || lowerAction.includes('change') || lowerAction.includes('edit')) 
+            return 'status-warning';
+        if (lowerAction.includes('complete')) return 'status-success';
+        if (lowerAction.includes('archive')) return 'status-archive';
+        if (lowerAction.includes('disposal')) return 'status-disposed';
+        if (lowerAction.includes('submit')) return 'status-info';
+        
+        return 'status-pending';
+    }
+
+    function getFieldDisplayValue(log) {
+        if (log.log_type !== 'record_change') return '';
+        
+        const fieldType = log.field_type || 'text';
+        
+        let oldValue = '';
+        let newValue = '';
+        
+        switch (fieldType) {
+            case 'text':
+                oldValue = log.old_value_text || 'Empty';
+                newValue = log.new_value_text || 'Empty';
+                break;
+            case 'number':
+                oldValue = log.old_value_int !== null ? log.old_value_int : 'Empty';
+                newValue = log.new_value_int !== null ? log.new_value_int : 'Empty';
+                break;
+            case 'date':
+                oldValue = log.old_value_date ? formatDateTimeDisplay(log.old_value_date) : 'Empty';
+                newValue = log.new_value_date ? formatDateTimeDisplay(log.new_value_date) : 'Empty';
+                break;
+            case 'enum':
+                oldValue = log.old_value_enum || 'Empty';
+                newValue = log.new_value_enum || 'Empty';
+                break;
+            case 'foreign_key':
+                oldValue = log.old_reference_name || log.old_reference_id || 'Empty';
+                newValue = log.new_reference_name || log.new_reference_id || 'Empty';
+                break;
+            default:
+                oldValue = 'N/A';
+                newValue = 'N/A';
+        }
+        
+        return escapeHtml(oldValue) + ' <span class="arrow">→</span> ' + escapeHtml(newValue);
+    }
+
+    function getUserDisplayName(log) {
+        let name = '';
+        if (log.first_name && log.last_name) {
+            name = log.first_name.trim() + ' ' + log.last_name.trim();
+        }
+        
+        if (name && name.trim() !== '') {
+            let displayName = escapeHtml(name);
+            
+            // Add role badge if admin
+            if (log.role_name && log.role_name.toLowerCase().includes('admin')) {
+                displayName += ' <span class="role-badge admin">(Admin)</span>';
+            }
+            
+            return displayName;
+        } else {
+            return 'System';
+        }
+    }
+
+    function getUserOfficeDisplay(log) {
+        if (log.user_office_name && log.user_office_name.trim() !== '') {
+            // Check if user is admin
+            if (log.role_name && log.role_name.toLowerCase().includes('admin')) {
                 return 'Admin';
             }
-
-            // Return office name or 'N/A'
-            return log[officeField] || 'N/A';
+            return escapeHtml(log.user_office_name);
         }
+        
+        return 'N/A';
+    }
 
-        function getUserDisplayName(log, userType = 'creator') {
-            const nameField = userType + '_name';
-            const roleField = userType + '_role';
-
-            const name = log[nameField] || '';
-            const role = log[roleField] || null;
-
-            if (!name) {
-                return 'System';
+    function getActionDescription(log) {
+        const actionType = log.action_type || '';
+        const recordTitle = log.record_series_title || '';
+        const agencyName = log.agency_name || '';
+        const fieldName = log.field_name || '';
+        
+        if (log.log_type === 'creation') {
+            return 'Record Created: ' + escapeHtml(recordTitle);
+        } else if (log.log_type === 'disposal_action') {
+            let desc = escapeHtml(actionType);
+            if (recordTitle) {
+                desc += ' - ' + escapeHtml(recordTitle);
+            } else if (agencyName) {
+                desc += ' - ' + escapeHtml(agencyName);
             }
-
-            const escapedName = escapeHtml(name).trim();
-
-            // Add role indicator if admin
-            if (role && role.toLowerCase().includes('admin')) {
-                return escapedName + ' <span class="role-badge admin">(Admin)</span>';
+            return desc;
+        } else if (log.log_type === 'record_change') {
+            let desc = 'Field Changed: ' + escapeHtml(fieldName);
+            if (recordTitle) {
+                desc += ' in ' + escapeHtml(recordTitle);
             }
+            return desc;
+        } else if (log.log_type === 'request_creation') {
+            return 'Disposal Request Created: ' + escapeHtml(agencyName);
+        }
+        
+        return 'System Activity';
+    }
 
-            return escapedName;
+    function getRecordLink(log) {
+        if (log.record_id && log.record_id.toString().trim() !== '') {
+            return 'record_view.php?id=' + log.record_id;
+        }
+        return '#';
+    }
+
+    // Folder Filtering functions - FIXED VERSION
+    function showAllLogs() {
+        currentFilter = 'all';
+        currentFilterId = null;
+
+        updateActiveFolder('allLogsFolder');
+        document.getElementById('currentFolderTitle').textContent = 'System Activities Timeline';
+        document.getElementById('currentFolderSubtitle').textContent = 'Track all record creation, changes, and disposal actions';
+        document.getElementById('folderContentTitle').textContent = 'Activities Timeline';
+        
+        // Use the allLogs array directly
+        document.getElementById('folderContentSubtitle').textContent = allLogs.length + ' activity entries found';
+        
+        displayLogs(allLogs);
+    }
+
+    function showMonthLogs(monthKey, monthYear) {
+        currentFilter = 'month';
+        currentFilterId = monthKey;
+
+        updateActiveFolder(null);
+        const monthFolder = document.querySelector(`.folder-item[data-month="${monthKey}"]`);
+        if (monthFolder) {
+            monthFolder.classList.add('active');
         }
 
-        // New helper functions for action user
-        function getActionUserDisplayName(log) {
-            const actionType = log.disposal_request_status || '';
-            
-            if (actionType === 'Approved') {
-                const name = log.approver_name || '';
-                const role = log.approver_role || null;
+        document.getElementById('currentFolderTitle').textContent = monthYear + ' Activities';
+        document.getElementById('currentFolderSubtitle').textContent = 'Activities from ' + monthYear;
+        document.getElementById('folderContentTitle').textContent = monthYear + ' Activities';
 
-                if (!name) {
-                    return 'N/A';
-                }
+        // Get logs for this month - check if month exists in logsByMonth
+        const monthData = logsByMonth[monthKey];
+        const monthLogs = monthData && monthData.logs ? monthData.logs : [];
+        document.getElementById('folderContentSubtitle').textContent = monthLogs.length + ' activity entries found';
+        displayLogs(monthLogs);
+    }
 
-                const escapedName = escapeHtml(name).trim();
+    function showTypeLogs(typeKey) {
+        currentFilter = 'type';
+        currentFilterId = typeKey;
 
-                // Add role indicator if admin
-                if (role && role.toLowerCase().includes('admin')) {
-                    return escapedName + ' <span class="role-badge admin">(Admin)</span>';
-                }
-
-                return escapedName;
-            } else if (actionType === 'Rejected') {
-                const name = log.rejector_name || '';
-                const role = log.rejector_role || null;
-
-                if (!name) {
-                    return 'N/A';
-                }
-
-                const escapedName = escapeHtml(name).trim();
-
-                // Add role indicator if admin
-                if (role && role.toLowerCase().includes('admin')) {
-                    return escapedName + ' <span class="role-badge admin">(Admin)</span>';
-                }
-
-                return escapedName;
-            }
-            
-            return 'N/A';
+        updateActiveFolder(null);
+        const typeFolder = document.querySelector(`.folder-item[data-type="${typeKey}"]`);
+        if (typeFolder) {
+            typeFolder.classList.add('active');
         }
 
-        function getActionUserOfficeDisplay(log) {
-            const actionType = log.disposal_request_status || '';
-            
-            if (actionType === 'Approved') {
-                const roleField = 'approver_role';
-                const officeField = 'approver_office';
+        // Get type name
+        const typeData = logsByType[typeKey];
+        const typeName = typeData && typeData.type ? typeData.type : typeKey;
 
-                // Check if role contains "admin"
-                if (log[roleField] && log[roleField].toLowerCase().includes('admin')) {
-                    return 'Admin';
-                }
+        document.getElementById('currentFolderTitle').textContent = typeName;
+        document.getElementById('currentFolderSubtitle').textContent = 'Activities of type: ' + typeName;
+        document.getElementById('folderContentTitle').textContent = typeName;
 
-                // Return office name or 'N/A'
-                return log[officeField] || 'N/A';
-            } else if (actionType === 'Rejected') {
-                const roleField = 'rejector_role';
-                const officeField = 'rejector_office';
+        // Get logs for this type
+        const typeLogs = typeData && typeData.logs ? typeData.logs : [];
+        document.getElementById('folderContentSubtitle').textContent = typeLogs.length + ' activity entries found';
+        displayLogs(typeLogs);
+    }
 
-                // Check if role contains "admin"
-                if (log[roleField] && log[roleField].toLowerCase().includes('admin')) {
-                    return 'Admin';
-                }
+    function showUserLogs(username) {
+        currentFilter = 'user';
+        currentFilterId = username;
 
-                // Return office name or 'N/A'
-                return log[officeField] || 'N/A';
-            }
-            
-            return 'N/A';
+        updateActiveFolder(null);
+        const userFolder = document.querySelector(`.folder-item[data-user="${username}"]`);
+        if (userFolder) {
+            userFolder.classList.add('active');
         }
 
-        function getActionDate(log) {
-            const actionType = log.disposal_request_status || '';
-            
-            if (actionType === 'Approved') {
-                return log.disposal_approved_at || null;
-            } else if (actionType === 'Rejected') {
-                return log.disposal_rejected_at || null;
-            }
-            
-            return null;
-        }
+        document.getElementById('currentFolderTitle').textContent = username + "'s Activities";
+        document.getElementById('currentFolderSubtitle').textContent = 'Activities by user: ' + username;
+        document.getElementById('folderContentTitle').textContent = username + "'s Activities";
 
-        // Folder Filtering functions
-        function showAllLogs() {
-            currentFilter = 'all';
-            currentFilterId = null;
+        // Get logs for this user
+        const userData = logsByUser[username];
+        const userLogs = userData && userData.logs ? userData.logs : [];
+        document.getElementById('folderContentSubtitle').textContent = userLogs.length + ' activity entries found';
+        displayLogs(userLogs);
+    }
 
-            updateActiveFolder('allLogsFolder');
-            document.getElementById('currentFolderTitle').textContent = 'All Records & Requests';
-            document.getElementById('currentFolderSubtitle').textContent = 'Browse records with creator info, disposal requests, and retention status';
-            document.getElementById('folderContentTitle').textContent = 'Records & Requests';
-            document.getElementById('folderContentSubtitle').textContent = allLogs.length + ' records found';
+    function updateActiveFolder(activeId) {
+        document.querySelectorAll('.folder-item').forEach(item => {
+            item.classList.remove('active');
+        });
 
-            displayLogs(allLogs);
-        }
-
-        function showMonthLogs(monthKey, monthYear) {
-            currentFilter = 'month';
-            currentFilterId = monthKey;
-
-            updateActiveFolder(null);
-            const monthFolder = document.querySelector(`.folder-item[data-month="${monthKey}"]`);
-            if (monthFolder) {
-                monthFolder.classList.add('active');
-            }
-
-            document.getElementById('currentFolderTitle').textContent = monthYear + ' Records';
-            document.getElementById('currentFolderSubtitle').textContent = 'Records created in ' + monthYear;
-            document.getElementById('folderContentTitle').textContent = monthYear + ' Records';
-
-            const monthLogs = logsByMonth[monthKey]?.logs || [];
-            document.getElementById('folderContentSubtitle').textContent = monthLogs.length + ' records found';
-            displayLogs(monthLogs);
-        }
-
-        function showTypeLogs(type) {
-            currentFilter = 'type';
-            currentFilterId = type;
-
-            updateActiveFolder(null);
-            const typeFolder = document.querySelector(`.folder-item[data-type="${type}"]`);
-            if (typeFolder) {
-                typeFolder.classList.add('active');
-            }
-
-            const typeName = type;
-
-            document.getElementById('currentFolderTitle').textContent = typeName + ' Records';
-            document.getElementById('currentFolderSubtitle').textContent = 'Records with status: ' + typeName;
-            document.getElementById('folderContentTitle').textContent = typeName + ' Records';
-
-            const typeLogs = logsByType[type]?.logs || [];
-            document.getElementById('folderContentSubtitle').textContent = typeLogs.length + ' records found';
-            displayLogs(typeLogs);
-        }
-
-        function showUserLogs(username) {
-            currentFilter = 'user';
-            currentFilterId = username;
-
-            updateActiveFolder(null);
-            const userFolder = document.querySelector(`.folder-item[data-user="${username}"]`);
-            if (userFolder) {
-                userFolder.classList.add('active');
-            }
-
-            document.getElementById('currentFolderTitle').textContent = username + "'s Records";
-            document.getElementById('currentFolderSubtitle').textContent = 'Records created by: ' + username;
-            document.getElementById('folderContentTitle').textContent = username + "'s Records";
-
-            const userLogs = logsByUser[username]?.logs || [];
-            document.getElementById('folderContentSubtitle').textContent = userLogs.length + ' records found';
-            displayLogs(userLogs);
-        }
-
-        function updateActiveFolder(activeId) {
-            document.querySelectorAll('.folder-item').forEach(item => {
-                item.classList.remove('active');
-            });
-
-            if (activeId) {
-                document.getElementById(activeId).classList.add('active');
+        if (activeId) {
+            const activeElement = document.getElementById(activeId);
+            if (activeElement) {
+                activeElement.classList.add('active');
             }
         }
+    }
 
-        function displayLogs(logs) {
-            const tbody = document.getElementById('logsTableBody');
+    // Display logs function - FIXED
+    function displayLogs(logs) {
+        const tbody = document.getElementById('logsTableBody');
 
-            if (logs.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="5">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">
-                                    <i class="fas fa-clipboard-list"></i>
-                                </div>
-                                <h3>No Records Found</h3>
-                                <p>No records found in this category.</p>
+        if (!logs || logs.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">
+                                <i class="fas fa-clipboard-list"></i>
                             </div>
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
+                            <h3>No Activity Found</h3>
+                            <p>No activities found in this category.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
 
-            let html = '';
-            logs.forEach(log => {
-                const recordStatusClass = getStatusClass(log.record_status);
-                const retentionStatusClass = getStatusClass(log.retention_status);
-                const recordIdPadded = String(log.record_id).padStart(5, '0');
-                const creatorName = getUserDisplayName(log, 'creator');
-                const creatorOffice = getUserOfficeDisplay(log, 'creator');
-                
-                // Determine main status
-                let mainStatus, mainStatusClass;
-                if (log.disposal_request_status) {
-                    mainStatus = log.disposal_request_status;
-                    mainStatusClass = getStatusClass(mainStatus);
-                } else {
-                    mainStatus = log.retention_status;
-                    mainStatusClass = retentionStatusClass;
-                }
-
-                html += `
-                    <tr id="log-row-${log.record_id}">
-                        <td>
-                            <div class="record-badge">
-                                <span class="record-id">R${recordIdPadded}</span>
-                            </div>
-                            <div class="record-code">
-                                ${escapeHtml(log.record_series_code)}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="record-title">
-                                <strong>${escapeHtml(log.record_series_title)}</strong>
-                            </div>
-                            <div class="record-meta">
+        let html = '';
+        
+        // Use the logs array directly - they already have display_id from PHP
+        logs.forEach((log) => {
+            const displayId = String(log.display_id).padStart(5, '0');
+            const actionClass = getActionClass(log.action_type);
+            const userName = getUserDisplayName(log);
+            const userOffice = getUserOfficeDisplay(log);
+            const actionDesc = getActionDescription(log);
+            const recordLink = getRecordLink(log);
+            const displayDate = formatDateTimeDisplay(log.action_date);
+            const shortDate = new Date(log.action_date).toLocaleDateString('en-US');
+            
+            html += `
+                <tr id="log-row-${log.display_id}">
+                    <td>
+                        <div class="record-badge">
+                            <span class="record-id">L${displayId}</span>
+                        </div>
+                        <div class="record-code">
+                            ${escapeHtml(shortDate)}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="record-title">
+                            <strong>${actionDesc}</strong>
+                        </div>
+                        <div class="record-meta">
+                            <span class="meta-item">
+                                <i class="fas fa-calendar"></i> ${displayDate}
+                            </span>
+                            ${log.record_series_title ? `
                                 <span class="meta-item">
-                                    <i class="fas fa-building"></i> ${escapeHtml(log.office_name)}
+                                    <i class="fas fa-file-alt"></i> 
+                                    ${recordLink !== '#' ? 
+                                        '<a href="' + recordLink + '" target="_blank" style="color: #1f366c;">' + 
+                                        escapeHtml(log.record_series_title) + '</a>' : 
+                                        escapeHtml(log.record_series_title)}
                                 </span>
+                            ` : ''}
+                            ${log.record_office_name ? `
                                 <span class="meta-item">
-                                    <i class="fas fa-calendar"></i> ${formatDateDisplay(log.record_created_date)}
+                                    <i class="fas fa-building"></i> ${escapeHtml(log.record_office_name)}
                                 </span>
-                                <span class="meta-item">
-                                    <i class="fas fa-tag"></i> ${escapeHtml(log.class_name)}
-                                </span>
+                            ` : ''}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="creator-info">
+                            <div class="creator-name">
+                                ${userName}
                             </div>
-                        </td>
-                        <td>
-                            <div class="creator-info">
-                                <div class="creator-name">
-                                    ${creatorName}
-                                </div>
-                                <div class="creator-office">
-                                    <small>${escapeHtml(creatorOffice)}</small>
-                                </div>
+                            <div class="creator-office">
+                                <small>${escapeHtml(userOffice)}</small>
                             </div>
-                        </td>
-                        <td>
-                            <div class="main-status">
-                                <span class="status-badge ${mainStatusClass}">
-                                    ${escapeHtml(mainStatus)}
-                                </span>
-                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="main-status">
+                            <span class="status-badge ${actionClass}">
+                                ${escapeHtml(log.action_type)}
+                            </span>
+                        </div>
+                        ${log.status_from && log.status_to ? `
                             <div class="sub-status">
                                 <small>
-                                    Record: 
-                                    <span class="status-indicator ${recordStatusClass}">
-                                        ${escapeHtml(log.record_status)}
+                                    Status: 
+                                    <span class="status-indicator ${getActionClass(log.status_from)}">
+                                        ${escapeHtml(log.status_from)}
+                                    </span>
+                                    <span class="arrow">→</span>
+                                    <span class="status-indicator ${getActionClass(log.status_to)}">
+                                        ${escapeHtml(log.status_to)}
                                     </span>
                                 </small>
                             </div>
-                            ${log.retention_end_date ? 
-                                (() => {
-                                    const endDate = formatDateDisplay(log.retention_end_date);
-                                    const today = new Date().toISOString().split('T')[0];
-                                    if (endDate < today) {
-                                        return `
-                                        <div class="retention-warning">
-                                            <small><i class="fas fa-exclamation-triangle text-danger"></i> Ended: ${endDate}</small>
+                        ` : ''}
+                        ${log.log_type === 'record_change' ? `
+                            <div class="sub-status">
+                                <small>
+                                    Changed: ${escapeHtml(log.field_name)}
+                                </small>
+                            </div>
+                        ` : ''}
+                        ${log.agency_name ? `
+                            <div class="disposal-badge">
+                                <small>
+                                    <i class="fas fa-building"></i> 
+                                    <span class="text-primary">${escapeHtml(log.agency_name)}</span>
+                                </small>
+                            </div>
+                        ` : ''}
+                    </td>
+                    <td>
+                        <button type="button" class="view-details-btn" onclick="toggleLogDetails(${log.display_id})">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                    </td>
+                </tr>
+                <tr class="log-details-row" id="log-details-${log.display_id}" style="display: none;">
+                    <td colspan="5">
+                        <div class="log-details-content">
+                            <div class="details-header">
+                                <h4>Activity Details: L${displayId}</h4>
+                            </div>
+                            <div class="details-grid">
+                                <div class="details-column">
+                                    <div class="details-section">
+                                        <h5><i class="fas fa-info-circle"></i> Activity Information</h5>
+                                        <div class="details-item">
+                                            <label>Type:</label>
+                                            <span class="status-badge ${actionClass}">
+                                                ${escapeHtml(log.action_type)}
+                                            </span>
                                         </div>
-                                        `;
-                                    } else {
-                                        return `
-                                        <div class="retention-info">
-                                            <small><i class="fas fa-clock"></i> Ends: ${endDate}</small>
+                                        <div class="details-item">
+                                            <label>Date & Time:</label>
+                                            <span>${displayDate}</span>
                                         </div>
-                                        `;
-                                    }
-                                })() : ''
-                            }
-                            ${log.disposal_agency_name ? `
-                                <div class="disposal-badge">
-                                    <small>
-                                        <i class="fas fa-trash"></i> 
-                                        <span class="text-primary">Disposal Requested</span>
-                                    </small>
-                                </div>
-                            ` : ''}
-                        </td>
-                        <td>
-                            <button type="button" class="view-details-btn" onclick="toggleLogDetails(${log.record_id})">
-                                <i class="fas fa-eye"></i> View
-                            </button>
-                        </td>
-                    </tr>
-                    <tr class="log-details-row" id="log-details-${log.record_id}" style="display: none;">
-                        <td colspan="5">
-                            <div class="log-details-content">
-                                <div class="details-header">
-                                    <h4>Record Details: R${recordIdPadded}</h4>
-                                </div>
-                                <div class="details-grid">
-                                    <div class="details-column">
+                                        <div class="details-item">
+                                            <label>Description:</label>
+                                            <span>${actionDesc}</span>
+                                        </div>
+                                        ${log.log_type === 'record_change' ? `
+                                            <div class="details-item">
+                                                <label>Field:</label>
+                                                <span>${escapeHtml(log.field_name)}</span>
+                                            </div>
+                                            <div class="details-item">
+                                                <label>Change:</label>
+                                                <span class="value-change">
+                                                    ${getFieldDisplayValue(log)}
+                                                </span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    ${log.record_series_title || log.class_name ? `
                                         <div class="details-section">
-                                            <h5><i class="fas fa-info-circle"></i> Record Information</h5>
-                                            <div class="details-item">
-                                                <label>Title:</label>
-                                                <span>${escapeHtml(log.record_series_title)}</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Code:</label>
-                                                <span>${escapeHtml(log.record_series_code)}</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Office:</label>
-                                                <span>${escapeHtml(log.office_name)}</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Classification:</label>
-                                                <span>${escapeHtml(log.class_name)}</span>
-                                            </div>
+                                            <h5><i class="fas fa-file-alt"></i> Record Information</h5>
+                                            ${log.record_series_title ? `
+                                                <div class="details-item">
+                                                    <label>Title:</label>
+                                                    <span>
+                                                        ${recordLink !== '#' ? 
+                                                            '<a href="' + recordLink + '" target="_blank" style="color: #1f366c;">' + 
+                                                            escapeHtml(log.record_series_title) + '</a>' : 
+                                                            escapeHtml(log.record_series_title)}
+                                                    </span>
+                                                </div>
+                                            ` : ''}
+                                            ${log.record_series_code ? `
+                                                <div class="details-item">
+                                                    <label>Code:</label>
+                                                    <span>${escapeHtml(log.record_series_code)}</span>
+                                                </div>
+                                            ` : ''}
+                                            ${log.record_office_name ? `
+                                                <div class="details-item">
+                                                    <label>Office:</label>
+                                                    <span>${escapeHtml(log.record_office_name)}</span>
+                                                </div>
+                                            ` : ''}
+                                            ${log.class_name ? `
+                                                <div class="details-item">
+                                                    <label>Classification:</label>
+                                                    <span>${escapeHtml(log.class_name)}</span>
+                                                </div>
+                                            ` : ''}
                                         </div>
-                                        <div class="details-section">
-                                            <h5><i class="fas fa-user"></i> Creator Information</h5>
-                                            <div class="details-item">
-                                                <label>Name:</label>
-                                                <span>${creatorName}</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Office:</label>
-                                                <span>${escapeHtml(creatorOffice)}</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Created:</label>
-                                                <span>${formatDateDisplay(log.record_created_date)}</span>
-                                            </div>
+                                    ` : ''}
+                                </div>
+                                <div class="details-column">
+                                    <div class="details-section">
+                                        <h5><i class="fas fa-user"></i> User Information</h5>
+                                        <div class="details-item">
+                                            <label>Name:</label>
+                                            <span>${userName}</span>
+                                        </div>
+                                        <div class="details-item">
+                                            <label>Office:</label>
+                                            <span>${escapeHtml(userOffice)}</span>
+                                        </div>
+                                        <div class="details-item">
+                                            <label>Email:</label>
+                                            <span>${escapeHtml(log.user_email || 'N/A')}</span>
+                                        </div>
+                                        <div class="details-item">
+                                            <label>Role:</label>
+                                            <span>${escapeHtml(log.role_name || 'N/A')}</span>
                                         </div>
                                     </div>
-                                    <div class="details-column">
+                                    ${log.status_from && log.status_to ? `
                                         <div class="details-section">
-                                            <h5><i class="fas fa-history"></i> Retention Information</h5>
+                                            <h5><i class="fas fa-exchange-alt"></i> Status Change</h5>
                                             <div class="details-item">
-                                                <label>Period:</label>
-                                                <span>${formatDateDisplay(log.period_from)} - ${formatDateDisplay(log.period_to)}</span>
+                                                <label>From:</label>
+                                                <span class="status-badge ${getActionClass(log.status_from)}">
+                                                    ${escapeHtml(log.status_from)}
+                                                </span>
                                             </div>
                                             <div class="details-item">
-                                                <label>Total Years:</label>
-                                                <span>${log.total_years} years</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Retention Period:</label>
-                                                <span>${escapeHtml(log.period_name || 'N/A')}</span>
-                                            </div>
-                                            <div class="details-item">
-                                                <label>Retention Status:</label>
-                                                <span class="status-badge ${retentionStatusClass}">
-                                                    ${escapeHtml(log.retention_status)}
+                                                <label>To:</label>
+                                                <span class="status-badge ${getActionClass(log.status_to)}">
+                                                    ${escapeHtml(log.status_to)}
                                                 </span>
                                             </div>
                                         </div>
-                                        ${log.disposal_agency_name ? 
-                                            (() => {
-                                                const disposalCreatorName = getUserDisplayName(log, 'disposal_creator');
-                                                const disposalCreatorOffice = getUserOfficeDisplay(log, 'disposal_creator');
-                                                const actionUserName = getActionUserDisplayName(log);
-                                                const actionUserOffice = getActionUserOfficeDisplay(log);
-                                                const actionDate = getActionDate(log);
-                                                
-                                                let actionUserHtml = '';
-                                                if (log.disposal_request_status === 'Approved' || log.disposal_request_status === 'Rejected') {
-                                                    if (actionDate) {
-                                                        actionUserHtml += `
-                                                            <div class="details-item">
-                                                                <label>${log.disposal_request_status} Date:</label>
-                                                                <span>${formatDateDisplay(actionDate)}</span>
-                                                            </div>
-                                                        `;
-                                                    }
-                                                    actionUserHtml += `
-                                                        <div class="details-item">
-                                                            <label>${log.disposal_request_status} By:</label>
-                                                            <span>
-                                                                ${actionUserName}
-                                                                ${actionUserOffice && actionUserOffice !== 'N/A' ? 
-                                                                    `(${escapeHtml(actionUserOffice)})` : ''}
-                                                            </span>
-                                                        </div>
-                                                    `;
-                                                }
-                                                
-                                                let remarksHtml = '';
-                                                if (log.disposal_remarks) {
-                                                    remarksHtml = `
-                                                        <div class="details-item">
-                                                            <label>Remarks:</label>
-                                                            <span>${escapeHtml(log.disposal_remarks)}</span>
-                                                        </div>
-                                                    `;
-                                                }
-                                                
-                                                return `
-                                                <div class="details-section">
-                                                    <h5><i class="fas fa-trash-alt"></i> Disposal Request</h5>
-                                                    <div class="details-item">
-                                                        <label>Agency:</label>
-                                                        <span>${escapeHtml(log.disposal_agency_name)}</span>
-                                                    </div>
-                                                    <div class="details-item">
-                                                        <label>Request Date:</label>
-                                                        <span>${formatDateDisplay(log.disposal_request_date)}</span>
-                                                    </div>
-                                                    <div class="details-item">
-                                                        <label>Requested By:</label>
-                                                        <span>${disposalCreatorName} (${escapeHtml(disposalCreatorOffice)})</span>
-                                                    </div>
-                                                    <div class="details-item">
-                                                        <label>Status:</label>
-                                                        <span class="status-badge ${getStatusClass(log.disposal_request_status)}">
-                                                            ${escapeHtml(log.disposal_request_status)}
-                                                        </span>
-                                                    </div>
-                                                    ${remarksHtml}
-                                                    ${actionUserHtml}
+                                    ` : ''}
+                                    ${log.agency_name ? `
+                                        <div class="details-section">
+                                            <h5><i class="fas fa-trash-alt"></i> Disposal Request</h5>
+                                            <div class="details-item">
+                                                <label>Agency:</label>
+                                                <span>${escapeHtml(log.agency_name)}</span>
+                                            </div>
+                                            ${log.request_date ? `
+                                                <div class="details-item">
+                                                    <label>Request Date:</label>
+                                                    <span>${formatDateTimeDisplay(log.request_date)}</span>
                                                 </div>
-                                                `;
-                                            })() : ''
-                                        }
-                                    </div>
-                                </div>
-                                <div class="details-footer">
-                                    <button type="button" class="close-details-btn" onclick="toggleLogDetails(${log.record_id})">
-                                        <i class="fas fa-times"></i> Close
-                                    </button>
+                                            ` : ''}
+                                            ${log.request_status ? `
+                                                <div class="details-item">
+                                                    <label>Request Status:</label>
+                                                    <span class="status-badge ${getActionClass(log.request_status)}">
+                                                        ${escapeHtml(log.request_status)}
+                                                    </span>
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    ` : ''}
+                                    ${log.notes && log.notes.trim() !== '' ? `
+                                        <div class="details-section">
+                                            <h5><i class="fas fa-sticky-note"></i> Notes</h5>
+                                            <div class="details-item" style="flex-direction: column; align-items: flex-start;">
+                                                <label>Details:</label>
+                                                <span style="background: #f8f9fa; padding: 10px; border-radius: 4px; width: 100%;">
+                                                    ${escapeHtml(log.notes)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ` : ''}
                                 </div>
                             </div>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            tbody.innerHTML = html;
-        }
-
-        // Toggle log details view
-        function toggleLogDetails(recordId) {
-            const detailsRow = document.getElementById(`log-details-${recordId}`);
-            const isVisible = detailsRow.style.display === 'table-row';
-            
-            // Close all other detail rows
-            document.querySelectorAll('.log-details-row').forEach(row => {
-                row.style.display = 'none';
-            });
-            
-            // Toggle current row
-            detailsRow.style.display = isVisible ? 'none' : 'table-row';
-            
-            // Smooth scroll to details if opening
-            if (!isVisible) {
-                setTimeout(() => {
-                    detailsRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }, 100);
-            }
-        }
-
-        // Helper functions
-        function getStatusClass(status) {
-            if (!status) return 'status-pending';
-
-            const lowerStatus = status.toLowerCase();
-            if (lowerStatus === 'active' || lowerStatus === 'approved')
-                return 'status-success';
-            if (lowerStatus === 'inactive' || lowerStatus === 'pending' || lowerStatus === 'scheduled for disposal')
-                return 'status-pending';
-            if (lowerStatus === 'rejected')
-                return 'status-failed';
-            if (lowerStatus === 'archived')
-                return 'status-archive';
-            if (lowerStatus === 'disposed')
-                return 'status-disposed';
-            if (lowerStatus === 'retention period reached')
-                return 'status-warning';
-            return 'status-pending';
-        }
-
-        function formatDateDisplay(dateString) {
-            if (!dateString || dateString === '0000-00-00' || dateString === '0000-00-00 00:00:00')
-                return '-';
-            return new Date(dateString).toLocaleDateString('en-US');
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Reset all filters
-        function resetFilters() {
-            document.getElementById('filterForm').reset();
-            window.location.href = 'reports.php';
-        }
-
-        // Event Listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            // Initialize Select2 for status filter
-            $('#action_type').select2({
-                placeholder: "All Status",
-                allowClear: true,
-                width: '100%',
-                minimumResultsForSearch: 10,
-                dropdownParent: $('#filterForm')
-            });
-
-            // Set minimum and maximum dates for date inputs
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('date_to').max = today;
-            document.getElementById('date_from').max = today;
-
-            // Set default date range (last 30 days)
-            if (!document.getElementById('date_from').value) {
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                document.getElementById('date_from').value = thirtyDaysAgo.toISOString().split('T')[0];
-            }
-
-            if (!document.getElementById('date_to').value) {
-                document.getElementById('date_to').value = today;
-            }
-
-            // Handle date validation
-            document.getElementById('date_from').addEventListener('change', function() {
-                const dateTo = document.getElementById('date_to');
-                if (this.value > dateTo.value) {
-                    dateTo.value = this.value;
-                }
-            });
-
-            document.getElementById('date_to').addEventListener('change', function() {
-                const dateFrom = document.getElementById('date_from');
-                if (this.value < dateFrom.value) {
-                    dateFrom.value = this.value;
-                }
-            });
-
-            // Add keyboard shortcuts
-            document.addEventListener('keydown', function(e) {
-                // Ctrl + F to focus search
-                if (e.ctrlKey && e.key === 'f') {
-                    e.preventDefault();
-                    document.getElementById('search_filter').focus();
-                }
-
-                // Esc to clear search
-                if (e.key === 'Escape') {
-                    const searchInput = document.getElementById('search_filter');
-                    if (document.activeElement === searchInput && searchInput.value) {
-                        searchInput.value = '';
-                        searchInput.focus();
-                    }
-                }
-
-                // Ctrl + R to reset filters
-                if (e.ctrlKey && e.key === 'r') {
-                    e.preventDefault();
-                    resetFilters();
-                }
-            });
+                            <div class="details-footer">
+                                <button type="button" class="close-details-btn" onclick="toggleLogDetails(${log.display_id})">
+                                    <i class="fas fa-times"></i> Close
+                                </button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
         });
-    </script>
-</body>
 
+        tbody.innerHTML = html;
+    }
+
+    // Toggle log details view
+    function toggleLogDetails(logId) {
+        const detailsRow = document.getElementById(`log-details-${logId}`);
+        if (!detailsRow) return;
+        
+        const isVisible = detailsRow.style.display === 'table-row';
+        
+        // Close all other detail rows
+        document.querySelectorAll('.log-details-row').forEach(row => {
+            row.style.display = 'none';
+        });
+        
+        // Toggle current row
+        detailsRow.style.display = isVisible ? 'none' : 'table-row';
+        
+        // Smooth scroll to details if opening
+        if (!isVisible) {
+            setTimeout(() => {
+                detailsRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+    }
+
+    // Reset all filters
+    function resetFilters() {
+        document.getElementById('filterForm').reset();
+        window.location.href = 'reports.php';
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Select2 for action type filter
+        $('#action_type').select2({
+            placeholder: "All Actions",
+            allowClear: true,
+            width: '100%',
+            minimumResultsForSearch: 10,
+            dropdownParent: $('#filterForm')
+        });
+
+        // Set date range limits
+        const today = new Date().toISOString().split('T')[0];
+        const dateToInput = document.getElementById('date_to');
+        const dateFromInput = document.getElementById('date_from');
+        
+        if (dateToInput) dateToInput.max = today;
+        if (dateFromInput) dateFromInput.max = today;
+
+        // Set default date values if empty
+        if (!dateFromInput.value) {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 30);
+            dateFromInput.value = sevenDaysAgo.toISOString().split('T')[0];
+        }
+        
+        if (!dateToInput.value) {
+            dateToInput.value = today;
+        }
+
+        // Handle date validation
+        if (dateFromInput) {
+            dateFromInput.addEventListener('change', function() {
+                if (dateToInput && this.value > dateToInput.value) {
+                    dateToInput.value = this.value;
+                }
+            });
+        }
+
+        if (dateToInput) {
+            dateToInput.addEventListener('change', function() {
+                if (dateFromInput && this.value < dateFromInput.value) {
+                    dateFromInput.value = this.value;
+                }
+            });
+        }
+
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + F to focus search
+            if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                const searchInput = document.getElementById('search_filter');
+                if (searchInput) searchInput.focus();
+            }
+
+            // Esc to clear search
+            if (e.key === 'Escape') {
+                const searchInput = document.getElementById('search_filter');
+                if (document.activeElement === searchInput && searchInput && searchInput.value) {
+                    searchInput.value = '';
+                    searchInput.focus();
+                }
+            }
+
+            // Ctrl + R to reset filters
+            if (e.ctrlKey && e.key === 'r') {
+                e.preventDefault();
+                resetFilters();
+            }
+        });
+        
+        // Debug: Check if data is loaded
+        console.log('All logs loaded:', allLogs.length);
+        console.log('Logs by month:', Object.keys(logsByMonth).length);
+        console.log('Logs by type:', Object.keys(logsByType).length);
+        console.log('Logs by user:', Object.keys(logsByUser).length);
+        
+        // Initialize with "All Logs" selected
+        showAllLogs();
+    });
+</script>
+</body>
 </html>

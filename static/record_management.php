@@ -1,6 +1,10 @@
 <?php
 require_once '../session.php';
 require_once '../db_connect.php';
+require_once '../db_logger.php'; // ADD THIS LINE
+
+// Create logger instance
+$logger = new SystemLogger($pdo); // ADD THIS LINE
 
 
 // ========== AUTO-UPDATE EXPIRED RECORDS ==========
@@ -28,6 +32,50 @@ try {
   if ($total_updated > 0) {
     $_SESSION['records_updated'] = $total_updated;
     $_SESSION['update_time'] = date('H:i:s');
+    
+    // ========== ADD LOGGING FOR AUTO-ARCHIVE ==========
+    // Get the IDs of records that were auto-archived
+    $getArchivedSql = "SELECT record_id, status FROM records 
+                       WHERE status = 'Archived' 
+                       AND DATE(updated_at) = :current_date
+                       AND record_id IN (
+                         SELECT record_id FROM records 
+                         WHERE status IN ('Active', 'Inactive') 
+                         AND period_to IS NOT NULL 
+                         AND DATE(period_to) <= :current_date2
+                       )";
+    
+    $getArchivedStmt = $pdo->prepare($getArchivedSql);
+    $getArchivedStmt->execute([
+      'current_date' => $current_date,
+      'current_date2' => $current_date
+    ]);
+    $archivedRecords = $getArchivedStmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Log each auto-archived record
+    foreach ($archivedRecords as $record) {
+      // Log disposal action for system auto-archive
+      $logger->logDisposalAction([
+        'record_id' => $record['record_id'],
+        'action_type' => 'ARCHIVE_COMPLETE',
+        'performed_by' => 0, // System/user_id 0 indicates system action
+        'status_from' => 'Active',
+        'status_to' => 'Archived',
+        'notes' => 'Auto-archived: Retention period expired',
+        'office_id' => null,
+        'role_id' => null
+      ]);
+      
+      // Log record status change
+      $logger->logRecordStatusChange(
+        $record['record_id'], 
+        0, // System action
+        $record['status'], 
+        'Archived', 
+        'Auto-archived: Retention period expired on ' . $current_date
+      );
+    }
+    // ========== END LOGGING ==========
   }
 } catch (Exception $e) {
   // Silently fail - don't break the page if update fails

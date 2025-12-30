@@ -1,6 +1,10 @@
 <?php
 require_once '../session.php';
 require_once '../db_connect.php';
+require_once '../db_logger.php'; // ADD THIS LINE
+
+// Create logger instance
+$logger = new SystemLogger($pdo); // ADD THIS LINE
 
 // Check database connection
 if (!isset($pdo)) {
@@ -43,6 +47,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
         $pdo->beginTransaction();
 
         if ($action === 'approve') {
+            // Get record IDs for this request BEFORE updating
+            $recordStmt = $pdo->prepare("
+                SELECT drd.record_id, r.status as current_status 
+                FROM disposal_request_details drd
+                JOIN records r ON drd.record_id = r.record_id
+                WHERE drd.request_id = ?
+            ");
+            $recordStmt->execute([$request_id]);
+            $records = $recordStmt->fetchAll(PDO::FETCH_ASSOC);
+            $recordIds = array_column($records, 'record_id');
+
             // Update request status to Approved
             $stmt = $pdo->prepare("
                 UPDATE disposal_requests 
@@ -51,6 +66,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
                 WHERE request_id = ?
             ");
             $stmt->execute([$remarks, $request_id]);
+
+            // Log the disposal request approval
+            $logger->logRequestApprove($request_id, $user_id, $recordIds, $remarks); // ADD THIS LINE
 
             // Update all records attached to this request to 'Disposed'
             $updateRecords = $pdo->prepare("
@@ -61,6 +79,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
             ");
             $updateRecords->execute([$request_id]);
 
+            // Log each record's status change
+            foreach ($records as $record) {
+                $logger->logRecordStatusChange(
+                    $record['record_id'], 
+                    $user_id, 
+                    $record['current_status'], 
+                    'Disposed', 
+                    'Disposal approved - Request #' . $request_id
+                ); // ADD THIS LINE
+            }
+
             $_SESSION['message'] = "Request R-" . str_pad($request_id, 3, '0', STR_PAD_LEFT) . " has been approved. All attached records have been marked as Disposed.";
             $_SESSION['message_type'] = 'success';
         } elseif ($action === 'decline') {
@@ -68,6 +97,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
             if (empty(trim($remarks))) {
                 throw new Exception("Remarks are required when declining a request. Please provide a reason.");
             }
+
+            // Get record IDs for this request BEFORE updating
+            $recordStmt = $pdo->prepare("
+                SELECT drd.record_id, r.status as current_status 
+                FROM disposal_request_details drd
+                JOIN records r ON drd.record_id = r.record_id
+                WHERE drd.request_id = ?
+            ");
+            $recordStmt->execute([$request_id]);
+            $records = $recordStmt->fetchAll(PDO::FETCH_ASSOC);
 
             // Update request status to Rejected with remarks
             $stmt = $pdo->prepare("
@@ -78,6 +117,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
             ");
             $stmt->execute([$remarks, $request_id]);
 
+            // Log the disposal request rejection
+            $logger->logRequestReject($request_id, $user_id, $remarks); // ADD THIS LINE
+
             // Update all records attached to this request back to 'Archived'
             $updateRecords = $pdo->prepare("
                 UPDATE records r
@@ -86,6 +128,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type'])) {
                 WHERE drd.request_id = ?
             ");
             $updateRecords->execute([$request_id]);
+
+            // Log each record's status change
+            foreach ($records as $record) {
+                $logger->logRecordStatusChange(
+                    $record['record_id'], 
+                    $user_id, 
+                    $record['current_status'], 
+                    'Archived', 
+                    'Disposal rejected - ' . $remarks
+                ); // ADD THIS LINE
+            }
 
             $_SESSION['message'] = "Request R-" . str_pad($request_id, 3, '0', STR_PAD_LEFT) . " has been rejected. All attached records have been returned to Archived status.";
             $_SESSION['message_type'] = 'success';
@@ -158,6 +211,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_type']) && $_P
 
         $request_id = $pdo->lastInsertId();
 
+        // Log disposal request creation
+        $logger->logRequestCreate($request_id, $user_id, 'New disposal request created'); // ADD THIS LINE
+
         // Insert request details for each selected record
         $stmt_details = $pdo->prepare("
             INSERT INTO disposal_request_details (request_id, record_id) 
@@ -174,6 +230,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_type']) && $_P
         foreach ($_POST['selected_records'] as $record_id) {
             $stmt_details->execute([$request_id, $record_id]);
             $stmt_update->execute([$record_id]);
+            
+            // Log each record's status change
+            $logger->logRecordStatusChange(
+                $record_id, 
+                $user_id, 
+                'Archived', 
+                'Scheduled for Disposal', 
+                'Added to disposal request #' . $request_id
+            ); // ADD THIS LINE
         }
 
         // Commit transaction
