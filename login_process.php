@@ -2,7 +2,7 @@
 session_start();
 require_once 'db_connect.php'; // This creates $pdo, not $conn
 require_once 'log_activity.php';
-// require_once '../log_activity.php';
+
 
 
 

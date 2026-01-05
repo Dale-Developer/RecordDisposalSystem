@@ -62,9 +62,9 @@ try {
                         LEFT JOIN record_classification rc ON r.class_id = rc.class_id
                         
                         WHERE 1=1";
-    
+
     $creation_params = [];
-    
+
     // Apply filters for creation logs
     if ($search_filter) {
         $creation_logs_sql .= " AND (
@@ -79,21 +79,21 @@ try {
         $search_param = "%$search_filter%";
         $creation_params = array_merge($creation_params, array_fill(0, 7, $search_param));
     }
-    
+
     if ($date_from) {
         $creation_logs_sql .= " AND DATE(r.date_created) >= ?";
         $creation_params[] = $date_from;
     }
-    
+
     if ($date_to) {
         $creation_logs_sql .= " AND DATE(r.date_created) <= ?";
         $creation_params[] = $date_to;
     }
-    
+
     if ($action_type && $action_type === 'RECORD_CREATED') {
         $creation_logs_sql .= " AND 1=1"; // Always true for creation filter
     }
-    
+
     // ========== QUERY 2: DISPOSAL ACTION LOGS ==========
     $disposal_logs_sql = "SELECT 
                             dal.action_id,
@@ -145,9 +145,9 @@ try {
                         LEFT JOIN disposal_requests dr ON dal.request_id = dr.request_id
                         
                         WHERE 1=1";
-    
+
     $disposal_params = [];
-    
+
     // Apply filters for disposal logs
     if ($search_filter) {
         $disposal_logs_sql .= " AND (
@@ -165,22 +165,22 @@ try {
         $search_param = "%$search_filter%";
         $disposal_params = array_merge($disposal_params, array_fill(0, 10, $search_param));
     }
-    
+
     if ($date_from) {
         $disposal_logs_sql .= " AND DATE(dal.performed_at) >= ?";
         $disposal_params[] = $date_from;
     }
-    
+
     if ($date_to) {
         $disposal_logs_sql .= " AND DATE(dal.performed_at) <= ?";
         $disposal_params[] = $date_to;
     }
-    
+
     if ($action_type && $action_type !== 'all' && $action_type !== 'field_change' && $action_type !== 'RECORD_CREATED') {
         $disposal_logs_sql .= " AND dal.action_type = ?";
         $disposal_params[] = $action_type;
     }
-    
+
     // ========== QUERY 3: RECORD CHANGE LOGS ==========
     $change_logs_sql = "SELECT 
                             rcl.change_id,
@@ -265,9 +265,9 @@ try {
                         LEFT JOIN record_classification new_class ON rcl.new_reference_id = new_class.class_id AND rcl.field_name = 'class_id'
                         
                         WHERE 1=1";
-    
+
     $change_params = [];
-    
+
     // Apply filters for change logs
     if ($search_filter) {
         $change_logs_sql .= " AND (
@@ -284,17 +284,17 @@ try {
         $search_param = "%$search_filter%";
         $change_params = array_merge($change_params, array_fill(0, 9, $search_param));
     }
-    
+
     if ($date_from) {
         $change_logs_sql .= " AND DATE(rcl.created_at) >= ?";
         $change_params[] = $date_from;
     }
-    
+
     if ($date_to) {
         $change_logs_sql .= " AND DATE(rcl.created_at) <= ?";
         $change_params[] = $date_to;
     }
-    
+
     if ($action_type && $action_type !== 'all' && $action_type !== 'RECORD_CREATED') {
         if ($action_type === 'field_change') {
             $change_logs_sql .= " AND rcl.field_name != 'status'";
@@ -307,7 +307,7 @@ try {
             $change_params[] = $action_type;
         }
     }
-    
+
     // ========== QUERY 4: DISPOSAL REQUEST CREATION ==========
     $request_logs_sql = "SELECT 
                             dr.request_id,
@@ -352,9 +352,9 @@ try {
                         LEFT JOIN offices uo ON u.office_id = uo.office_id
                         
                         WHERE 1=1";
-    
+
     $request_params = [];
-    
+
     // Apply filters for request logs
     if ($search_filter) {
         $request_logs_sql .= " AND (
@@ -368,87 +368,88 @@ try {
         $search_param = "%$search_filter%";
         $request_params = array_merge($request_params, array_fill(0, 6, $search_param));
     }
-    
+
     if ($date_from) {
         $request_logs_sql .= " AND DATE(dr.request_date) >= ?";
         $request_params[] = $date_from;
     }
-    
+
     if ($date_to) {
         $request_logs_sql .= " AND DATE(dr.request_date) <= ?";
         $request_params[] = $date_to;
     }
-    
+
     if ($action_type && $action_type === 'REQUEST_CREATED') {
         $request_logs_sql .= " AND 1=1"; // Always true for request creation filter
     }
-    
+
     // Execute all queries
     $all_logs = [];
-    
+
     // Get creation logs
     $creation_stmt = $pdo->prepare($creation_logs_sql . " ORDER BY r.date_created DESC");
     $creation_stmt->execute($creation_params);
     $creation_logs = $creation_stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     foreach ($creation_logs as $log) {
         $log['log_type'] = 'creation';
         $log['log_id'] = 'CR-' . $log['record_id'];
         $log['entity_id'] = $log['record_id'];
         $all_logs[] = $log;
     }
-    
+
     // Get disposal action logs
     $disposal_stmt = $pdo->prepare($disposal_logs_sql . " ORDER BY dal.performed_at DESC");
     $disposal_stmt->execute($disposal_params);
     $disposal_logs = $disposal_stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     foreach ($disposal_logs as $log) {
         $log['log_type'] = 'disposal_action';
         $log['log_id'] = 'DA-' . $log['action_id'];
         $log['entity_id'] = $log['record_id'] ?: $log['request_id'] ?: $log['action_id'];
         $all_logs[] = $log;
     }
-    
+
     // Get record change logs
     $change_stmt = $pdo->prepare($change_logs_sql . " ORDER BY rcl.created_at DESC");
     $change_stmt->execute($change_params);
     $change_logs = $change_stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     foreach ($change_logs as $log) {
         $log['log_type'] = 'record_change';
         $log['log_id'] = 'RC-' . $log['change_id'];
         $log['entity_id'] = $log['record_id'];
         $all_logs[] = $log;
     }
-    
+
     // Get disposal request creation logs
     $request_stmt = $pdo->prepare($request_logs_sql . " ORDER BY dr.request_date DESC");
     $request_stmt->execute($request_params);
     $request_logs = $request_stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     foreach ($request_logs as $log) {
         $log['log_type'] = 'request_creation';
         $log['log_id'] = 'DR-' . $log['request_id'];
         $log['entity_id'] = $log['request_id'];
         $all_logs[] = $log;
     }
-    
+
     // Sort all logs by timestamp (newest first)
-    usort($all_logs, function($a, $b) {
+    usort($all_logs, function ($a, $b) {
         $dateA = strtotime($a['action_date'] ?? '1970-01-01');
         $dateB = strtotime($b['action_date'] ?? '1970-01-01');
         return $dateB - $dateA;
     });
-    
+
     // Assign sequential IDs for display
+    $total_logs = count($all_logs);
     foreach ($all_logs as $index => $log) {
-        $all_logs[$index]['display_id'] = $index + 1;
+        $all_logs[$index]['display_id'] = $total_logs - $index;
     }
-    
+
     $logs = $all_logs;
     $total_logs = count($logs);
-    
+
     // Get unique action types for filter dropdown
     $action_types_sql = "SELECT DISTINCT action_type FROM disposal_action_log 
                         UNION 
@@ -462,26 +463,26 @@ try {
                         ORDER BY action_type";
     $action_types_stmt = $pdo->query($action_types_sql);
     $action_types = $action_types_stmt->fetchAll(PDO::FETCH_COLUMN);
-    
+
     // Get unique field names for filter dropdown
     $field_names_sql = "SELECT DISTINCT field_name FROM record_change_log ORDER BY field_name";
     $field_names_stmt = $pdo->query($field_names_sql);
     $field_names = $field_names_stmt->fetchAll(PDO::FETCH_COLUMN);
-    
+
     $available_action_types = array_merge(
         ['all' => 'All Actions'],
         $action_types
     );
-    
+
     // Group logs by month for sidebar
     $logs_by_month = [];
     foreach ($logs as $log) {
         $timestamp = $log['action_date'] ?? null;
         if (!$timestamp || $timestamp === '0000-00-00 00:00:00') continue;
-        
+
         $year_month = date('Y-m', strtotime($timestamp));
         $month_name = date('F Y', strtotime($timestamp));
-        
+
         if (!isset($logs_by_month[$year_month])) {
             $logs_by_month[$year_month] = [
                 'month_year' => $month_name,
@@ -490,12 +491,12 @@ try {
         }
         $logs_by_month[$year_month]['logs'][] = $log;
     }
-    
+
     // Group logs by type for sidebar
     $logs_by_type = [];
     foreach ($logs as $log) {
         $type_key = $log['log_type'] ?? 'other';
-        
+
         $type_names = [
             'creation' => 'Record Creation',
             'disposal_action' => 'Disposal Actions',
@@ -503,9 +504,9 @@ try {
             'request_creation' => 'Request Creation',
             'other' => 'Other Actions'
         ];
-        
+
         $type_name = $type_names[$type_key] ?? ucfirst(str_replace('_', ' ', $type_key));
-        
+
         if (!isset($logs_by_type[$type_key])) {
             $logs_by_type[$type_key] = [
                 'type' => $type_name,
@@ -514,16 +515,16 @@ try {
         }
         $logs_by_type[$type_key]['logs'][] = $log;
     }
-    
+
     // Group logs by user for sidebar
     $logs_by_user = [];
     foreach ($logs as $log) {
         $user_name = '';
-        
+
         if (isset($log['first_name']) && isset($log['last_name'])) {
             $user_name = trim($log['first_name'] . ' ' . $log['last_name']);
         }
-        
+
         if ($user_name && $user_name !== '' && $user_name !== 'Unknown' && $user_name !== 'System') {
             if (!isset($logs_by_user[$user_name])) {
                 $logs_by_user[$user_name] = [
@@ -534,69 +535,73 @@ try {
             $logs_by_user[$user_name]['logs'][] = $log;
         }
     }
-    
 } catch (PDOException $e) {
     error_log("Database error in reports.php: " . $e->getMessage());
     $error = "Database error occurred: " . $e->getMessage();
 }
 
 // Function to get CSS class for action type
-function getActionClass($action_type) {
+function getActionClass($action_type)
+{
     if (!$action_type) return 'status-pending';
-    
+
     $lowerAction = strtolower($action_type);
-    
+
     // Record creation
     if (strpos($lowerAction, 'create') !== false) return 'status-info';
-    
+
     // Approval actions
     if (strpos($lowerAction, 'approve') !== false) return 'status-success';
-    
+
     // Rejection actions
     if (strpos($lowerAction, 'reject') !== false) return 'status-failed';
-    
+
     // Update/change actions
-    if (strpos($lowerAction, 'update') !== false || 
-        strpos($lowerAction, 'change') !== false || 
-        strpos($lowerAction, 'edit') !== false) return 'status-warning';
-    
+    if (
+        strpos($lowerAction, 'update') !== false ||
+        strpos($lowerAction, 'change') !== false ||
+        strpos($lowerAction, 'edit') !== false
+    ) return 'status-warning';
+
     // Completion actions
     if (strpos($lowerAction, 'complete') !== false) return 'status-success';
-    
+
     // Archive actions
     if (strpos($lowerAction, 'archive') !== false) return 'status-archive';
-    
+
     // Disposal actions
     if (strpos($lowerAction, 'disposal') !== false) return 'status-disposed';
-    
+
     // Submission actions
     if (strpos($lowerAction, 'submit') !== false) return 'status-info';
-    
+
     // Default
     return 'status-pending';
 }
 
 // Function to format date time display
-function formatDateTimeDisplay($datetime) {
+function formatDateTimeDisplay($datetime)
+{
     if (!$datetime || $datetime === '0000-00-00' || $datetime === '0000-00-00 00:00:00') return '-';
     return date('M d, Y h:i A', strtotime($datetime));
 }
 
 // Function to get user display name
-function getUserDisplayName($log) {
+function getUserDisplayName($log)
+{
     $name = '';
     if (isset($log['first_name']) && isset($log['last_name'])) {
         $name = trim($log['first_name'] . ' ' . $log['last_name']);
     }
-    
+
     if ($name && trim($name) !== '') {
         $display_name = htmlspecialchars($name);
-        
+
         // Add role badge if admin
         if (isset($log['role_name']) && stripos($log['role_name'], 'admin') !== false) {
             $display_name .= ' <span class="role-badge admin">(Admin)</span>';
         }
-        
+
         return $display_name;
     } else {
         return 'System';
@@ -604,7 +609,8 @@ function getUserDisplayName($log) {
 }
 
 // Function to get user office display
-function getUserOfficeDisplay($log) {
+function getUserOfficeDisplay($log)
+{
     if (isset($log['user_office_name']) && $log['user_office_name']) {
         // Check if user is admin
         if (isset($log['role_name']) && stripos($log['role_name'], 'admin') !== false) {
@@ -612,17 +618,18 @@ function getUserOfficeDisplay($log) {
         }
         return htmlspecialchars($log['user_office_name']);
     }
-    
+
     return 'N/A';
 }
 
 // Function to get action description
-function getActionDescription($log) {
+function getActionDescription($log)
+{
     $action_type = $log['action_type'] ?? '';
     $record_title = $log['record_series_title'] ?? '';
     $agency_name = $log['agency_name'] ?? '';
     $field_name = $log['field_name'] ?? '';
-    
+
     if ($log['log_type'] === 'creation') {
         return 'Record Created: ' . htmlspecialchars($record_title);
     } elseif ($log['log_type'] === 'disposal_action') {
@@ -642,14 +649,15 @@ function getActionDescription($log) {
     } elseif ($log['log_type'] === 'request_creation') {
         return 'Disposal Request Created: ' . htmlspecialchars($agency_name);
     }
-    
+
     return 'System Activity';
 }
 
 // Function to get icon for action type
-function getActionIcon($log) {
+function getActionIcon($log)
+{
     $action_type = strtolower($log['action_type'] ?? '');
-    
+
     if ($log['log_type'] === 'creation') {
         return 'fas fa-plus-circle';
     } elseif ($log['log_type'] === 'disposal_action') {
@@ -667,12 +675,13 @@ function getActionIcon($log) {
     } elseif ($log['log_type'] === 'request_creation') {
         return 'fas fa-file-alt';
     }
-    
+
     return 'fas fa-history';
 }
 
 // Function to get record link if available
-function getRecordLink($log) {
+function getRecordLink($log)
+{
     if (isset($log['record_id']) && $log['record_id']) {
         return 'record_view.php?id=' . $log['record_id'];
     }
@@ -680,11 +689,12 @@ function getRecordLink($log) {
 }
 
 // Function to get display value for a field change
-function getFieldDisplayValue($log) {
+function getFieldDisplayValue($log)
+{
     if (($log['log_type'] ?? '') !== 'record_change') return '';
-    
+
     $field_type = $log['field_type'] ?? 'text';
-    
+
     switch ($field_type) {
         case 'text':
             $old_val = $log['old_value_text'] ?: 'Empty';
@@ -710,7 +720,7 @@ function getFieldDisplayValue($log) {
             $old_val = 'N/A';
             $new_val = 'N/A';
     }
-    
+
     return htmlspecialchars($old_val) . ' <span class="arrow">→</span> ' . htmlspecialchars($new_val);
 }
 ?>
@@ -1451,16 +1461,16 @@ function getFieldDisplayValue($log) {
             .archive-container {
                 grid-template-columns: 1fr;
             }
-            
+
             .folders-sidebar {
                 max-height: 300px;
             }
-            
+
             .records-table-view {
                 display: block;
                 overflow-x: auto;
             }
-            
+
             .records-table-view th,
             .records-table_view td {
                 white-space: nowrap;
@@ -1645,7 +1655,7 @@ function getFieldDisplayValue($log) {
                                 </optgroup>
                                 <optgroup label="Disposal Actions">
                                     <option value="REQUEST_CREATED" <?= $action_type == 'REQUEST_CREATED' ? 'selected' : '' ?>>Request Created</option>
-                                    <?php 
+                                    <?php
                                     // Display disposal action types
                                     $disposal_actions = ['REQUEST_SUBMIT', 'REQUEST_APPROVE', 'REQUEST_REJECT', 'DISPOSAL_COMPLETE', 'ARCHIVE_COMPLETE'];
                                     foreach ($disposal_actions as $action):
@@ -1656,7 +1666,7 @@ function getFieldDisplayValue($log) {
                                     <?php endif;
                                     endforeach; ?>
                                 </optgroup>
-                                <?php 
+                                <?php
                                 // Field changes
                                 if (!empty($field_names)): ?>
                                     <optgroup label="Specific Field Changes">
@@ -1736,7 +1746,7 @@ function getFieldDisplayValue($log) {
                                                     <?= htmlspecialchars(date('m/d/Y', strtotime($log['action_date']))) ?>
                                                 </div>
                                             </td>
-                                            
+
                                             <!-- Action Column -->
                                             <td>
                                                 <div class="record-title">
@@ -1748,10 +1758,10 @@ function getFieldDisplayValue($log) {
                                                     </span>
                                                     <?php if ($log['record_series_title']): ?>
                                                         <span class="meta-item">
-                                                            <i class="fas fa-file-alt"></i> 
-                                                            <?= $record_link !== '#' ? 
-                                                                '<a href="' . $record_link . '" target="_blank" style="color: #1f366c;">' . 
-                                                                htmlspecialchars($log['record_series_title']) . '</a>' : 
+                                                            <i class="fas fa-file-alt"></i>
+                                                            <?= $record_link !== '#' ?
+                                                                '<a href="' . $record_link . '" target="_blank" style="color: #1f366c;">' .
+                                                                htmlspecialchars($log['record_series_title']) . '</a>' :
                                                                 htmlspecialchars($log['record_series_title']) ?>
                                                         </span>
                                                     <?php endif; ?>
@@ -1762,7 +1772,7 @@ function getFieldDisplayValue($log) {
                                                     <?php endif; ?>
                                                 </div>
                                             </td>
-                                            
+
                                             <!-- User Column -->
                                             <td>
                                                 <div class="creator-info">
@@ -1774,7 +1784,7 @@ function getFieldDisplayValue($log) {
                                                     </div>
                                                 </div>
                                             </td>
-                                            
+
                                             <!-- Details Column -->
                                             <td>
                                                 <!-- Main Status Badge -->
@@ -1783,12 +1793,12 @@ function getFieldDisplayValue($log) {
                                                         <?= htmlspecialchars($log['action_type']) ?>
                                                     </span>
                                                 </div>
-                                                
+
                                                 <!-- Status Change -->
                                                 <?php if ($log['status_from'] && $log['status_to']): ?>
                                                     <div class="sub-status">
                                                         <small>
-                                                            Status: 
+                                                            Status:
                                                             <span class="status-indicator <?= getActionClass($log['status_from']) ?>">
                                                                 <?= htmlspecialchars($log['status_from']) ?>
                                                             </span>
@@ -1799,7 +1809,7 @@ function getFieldDisplayValue($log) {
                                                         </small>
                                                     </div>
                                                 <?php endif; ?>
-                                                
+
                                                 <!-- Field Change -->
                                                 <?php if ($log['log_type'] === 'record_change'): ?>
                                                     <div class="sub-status">
@@ -1808,18 +1818,18 @@ function getFieldDisplayValue($log) {
                                                         </small>
                                                     </div>
                                                 <?php endif; ?>
-                                                
+
                                                 <!-- Agency Info -->
                                                 <?php if ($log['agency_name']): ?>
                                                     <div class="disposal-badge">
                                                         <small>
-                                                            <i class="fas fa-building"></i> 
+                                                            <i class="fas fa-building"></i>
                                                             <span class="text-primary"><?= htmlspecialchars($log['agency_name']) ?></span>
                                                         </small>
                                                     </div>
                                                 <?php endif; ?>
                                             </td>
-                                            
+
                                             <!-- Actions Column -->
                                             <td>
                                                 <button type="button" class="view-details-btn" onclick="toggleLogDetails(<?= $log['display_id'] ?>)">
@@ -1827,7 +1837,7 @@ function getFieldDisplayValue($log) {
                                                 </button>
                                             </td>
                                         </tr>
-                                        
+
                                         <!-- Details row -->
                                         <tr class="log-details-row" id="log-details-<?= $log['display_id'] ?>" style="display: none;">
                                             <td colspan="5">
@@ -1835,7 +1845,7 @@ function getFieldDisplayValue($log) {
                                                     <div class="details-header">
                                                         <h4>Activity Details: L<?= $display_id ?></h4>
                                                     </div>
-                                                    
+
                                                     <div class="details-grid">
                                                         <!-- Left Column -->
                                                         <div class="details-column">
@@ -1868,7 +1878,7 @@ function getFieldDisplayValue($log) {
                                                                     </div>
                                                                 <?php endif; ?>
                                                             </div>
-                                                            
+
                                                             <?php if ($log['record_series_title'] || $log['class_name']): ?>
                                                                 <div class="details-section">
                                                                     <h5><i class="fas fa-file-alt"></i> Record Information</h5>
@@ -1876,9 +1886,9 @@ function getFieldDisplayValue($log) {
                                                                         <div class="details-item">
                                                                             <label>Title:</label>
                                                                             <span>
-                                                                                <?= $record_link !== '#' ? 
-                                                                                    '<a href="' . $record_link . '" target="_blank" style="color: #1f366c;">' . 
-                                                                                    htmlspecialchars($log['record_series_title']) . '</a>' : 
+                                                                                <?= $record_link !== '#' ?
+                                                                                    '<a href="' . $record_link . '" target="_blank" style="color: #1f366c;">' .
+                                                                                    htmlspecialchars($log['record_series_title']) . '</a>' :
                                                                                     htmlspecialchars($log['record_series_title']) ?>
                                                                             </span>
                                                                         </div>
@@ -1904,7 +1914,7 @@ function getFieldDisplayValue($log) {
                                                                 </div>
                                                             <?php endif; ?>
                                                         </div>
-                                                        
+
                                                         <!-- Right Column -->
                                                         <div class="details-column">
                                                             <div class="details-section">
@@ -1926,7 +1936,7 @@ function getFieldDisplayValue($log) {
                                                                     <span><?= htmlspecialchars($log['role_name'] ?? 'N/A') ?></span>
                                                                 </div>
                                                             </div>
-                                                            
+
                                                             <?php if ($log['status_from'] && $log['status_to']): ?>
                                                                 <div class="details-section">
                                                                     <h5><i class="fas fa-exchange-alt"></i> Status Change</h5>
@@ -1944,7 +1954,7 @@ function getFieldDisplayValue($log) {
                                                                     </div>
                                                                 </div>
                                                             <?php endif; ?>
-                                                            
+
                                                             <?php if ($log['agency_name']): ?>
                                                                 <div class="details-section">
                                                                     <h5><i class="fas fa-trash-alt"></i> Disposal Request</h5>
@@ -1968,7 +1978,7 @@ function getFieldDisplayValue($log) {
                                                                     <?php endif; ?>
                                                                 </div>
                                                             <?php endif; ?>
-                                                            
+
                                                             <?php if ($log['notes'] && trim($log['notes']) !== ''): ?>
                                                                 <div class="details-section">
                                                                     <h5><i class="fas fa-sticky-note"></i> Notes</h5>
@@ -1982,7 +1992,7 @@ function getFieldDisplayValue($log) {
                                                             <?php endif; ?>
                                                         </div>
                                                     </div>
-                                                    
+
                                                     <div class="details-footer">
                                                         <button type="button" class="close-details-btn" onclick="toggleLogDetails(<?= $log['display_id'] ?>)">
                                                             <i class="fas fa-times"></i> Close
@@ -2002,260 +2012,260 @@ function getFieldDisplayValue($log) {
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script>
-    // Global variables - populated from PHP
-    let currentFilter = 'all';
-    let currentFilterId = null;
-    let allLogs = <?= json_encode($logs) ?>;
-    let logsByMonth = <?= json_encode($logs_by_month) ?>;
-    let logsByType = <?= json_encode($logs_by_type) ?>;
-    let logsByUser = <?= json_encode($logs_by_user) ?>;
+    <script>
+        // Global variables - populated from PHP
+        let currentFilter = 'all';
+        let currentFilterId = null;
+        let allLogs = <?= json_encode($logs) ?>;
+        let logsByMonth = <?= json_encode($logs_by_month) ?>;
+        let logsByType = <?= json_encode($logs_by_type) ?>;
+        let logsByUser = <?= json_encode($logs_by_user) ?>;
 
-    // Helper functions
-    function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    function formatDateTimeDisplay(dateString) {
-        if (!dateString || dateString === '0000-00-00' || dateString === '0000-00-00 00:00:00') return '-';
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-        }) + ' ' + date.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        });
-    }
-
-    function getActionClass(actionType) {
-        if (!actionType) return 'status-pending';
-        
-        const lowerAction = actionType.toLowerCase();
-        
-        if (lowerAction.includes('create')) return 'status-info';
-        if (lowerAction.includes('approve')) return 'status-success';
-        if (lowerAction.includes('reject')) return 'status-failed';
-        if (lowerAction.includes('update') || lowerAction.includes('change') || lowerAction.includes('edit')) 
-            return 'status-warning';
-        if (lowerAction.includes('complete')) return 'status-success';
-        if (lowerAction.includes('archive')) return 'status-archive';
-        if (lowerAction.includes('disposal')) return 'status-disposed';
-        if (lowerAction.includes('submit')) return 'status-info';
-        
-        return 'status-pending';
-    }
-
-    function getFieldDisplayValue(log) {
-        if (log.log_type !== 'record_change') return '';
-        
-        const fieldType = log.field_type || 'text';
-        
-        let oldValue = '';
-        let newValue = '';
-        
-        switch (fieldType) {
-            case 'text':
-                oldValue = log.old_value_text || 'Empty';
-                newValue = log.new_value_text || 'Empty';
-                break;
-            case 'number':
-                oldValue = log.old_value_int !== null ? log.old_value_int : 'Empty';
-                newValue = log.new_value_int !== null ? log.new_value_int : 'Empty';
-                break;
-            case 'date':
-                oldValue = log.old_value_date ? formatDateTimeDisplay(log.old_value_date) : 'Empty';
-                newValue = log.new_value_date ? formatDateTimeDisplay(log.new_value_date) : 'Empty';
-                break;
-            case 'enum':
-                oldValue = log.old_value_enum || 'Empty';
-                newValue = log.new_value_enum || 'Empty';
-                break;
-            case 'foreign_key':
-                oldValue = log.old_reference_name || log.old_reference_id || 'Empty';
-                newValue = log.new_reference_name || log.new_reference_id || 'Empty';
-                break;
-            default:
-                oldValue = 'N/A';
-                newValue = 'N/A';
+        // Helper functions
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
-        
-        return escapeHtml(oldValue) + ' <span class="arrow">→</span> ' + escapeHtml(newValue);
-    }
 
-    function getUserDisplayName(log) {
-        let name = '';
-        if (log.first_name && log.last_name) {
-            name = log.first_name.trim() + ' ' + log.last_name.trim();
+        function formatDateTimeDisplay(dateString) {
+            if (!dateString || dateString === '0000-00-00' || dateString === '0000-00-00 00:00:00') return '-';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            }) + ' ' + date.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
         }
-        
-        if (name && name.trim() !== '') {
-            let displayName = escapeHtml(name);
-            
-            // Add role badge if admin
-            if (log.role_name && log.role_name.toLowerCase().includes('admin')) {
-                displayName += ' <span class="role-badge admin">(Admin)</span>';
+
+        function getActionClass(actionType) {
+            if (!actionType) return 'status-pending';
+
+            const lowerAction = actionType.toLowerCase();
+
+            if (lowerAction.includes('create')) return 'status-info';
+            if (lowerAction.includes('approve')) return 'status-success';
+            if (lowerAction.includes('reject')) return 'status-failed';
+            if (lowerAction.includes('update') || lowerAction.includes('change') || lowerAction.includes('edit'))
+                return 'status-warning';
+            if (lowerAction.includes('complete')) return 'status-success';
+            if (lowerAction.includes('archive')) return 'status-archive';
+            if (lowerAction.includes('disposal')) return 'status-disposed';
+            if (lowerAction.includes('submit')) return 'status-info';
+
+            return 'status-pending';
+        }
+
+        function getFieldDisplayValue(log) {
+            if (log.log_type !== 'record_change') return '';
+
+            const fieldType = log.field_type || 'text';
+
+            let oldValue = '';
+            let newValue = '';
+
+            switch (fieldType) {
+                case 'text':
+                    oldValue = log.old_value_text || 'Empty';
+                    newValue = log.new_value_text || 'Empty';
+                    break;
+                case 'number':
+                    oldValue = log.old_value_int !== null ? log.old_value_int : 'Empty';
+                    newValue = log.new_value_int !== null ? log.new_value_int : 'Empty';
+                    break;
+                case 'date':
+                    oldValue = log.old_value_date ? formatDateTimeDisplay(log.old_value_date) : 'Empty';
+                    newValue = log.new_value_date ? formatDateTimeDisplay(log.new_value_date) : 'Empty';
+                    break;
+                case 'enum':
+                    oldValue = log.old_value_enum || 'Empty';
+                    newValue = log.new_value_enum || 'Empty';
+                    break;
+                case 'foreign_key':
+                    oldValue = log.old_reference_name || log.old_reference_id || 'Empty';
+                    newValue = log.new_reference_name || log.new_reference_id || 'Empty';
+                    break;
+                default:
+                    oldValue = 'N/A';
+                    newValue = 'N/A';
             }
-            
-            return displayName;
-        } else {
-            return 'System';
-        }
-    }
 
-    function getUserOfficeDisplay(log) {
-        if (log.user_office_name && log.user_office_name.trim() !== '') {
-            // Check if user is admin
-            if (log.role_name && log.role_name.toLowerCase().includes('admin')) {
-                return 'Admin';
+            return escapeHtml(oldValue) + ' <span class="arrow">→</span> ' + escapeHtml(newValue);
+        }
+
+        function getUserDisplayName(log) {
+            let name = '';
+            if (log.first_name && log.last_name) {
+                name = log.first_name.trim() + ' ' + log.last_name.trim();
             }
-            return escapeHtml(log.user_office_name);
-        }
-        
-        return 'N/A';
-    }
 
-    function getActionDescription(log) {
-        const actionType = log.action_type || '';
-        const recordTitle = log.record_series_title || '';
-        const agencyName = log.agency_name || '';
-        const fieldName = log.field_name || '';
-        
-        if (log.log_type === 'creation') {
-            return 'Record Created: ' + escapeHtml(recordTitle);
-        } else if (log.log_type === 'disposal_action') {
-            let desc = escapeHtml(actionType);
-            if (recordTitle) {
-                desc += ' - ' + escapeHtml(recordTitle);
-            } else if (agencyName) {
-                desc += ' - ' + escapeHtml(agencyName);
-            }
-            return desc;
-        } else if (log.log_type === 'record_change') {
-            let desc = 'Field Changed: ' + escapeHtml(fieldName);
-            if (recordTitle) {
-                desc += ' in ' + escapeHtml(recordTitle);
-            }
-            return desc;
-        } else if (log.log_type === 'request_creation') {
-            return 'Disposal Request Created: ' + escapeHtml(agencyName);
-        }
-        
-        return 'System Activity';
-    }
+            if (name && name.trim() !== '') {
+                let displayName = escapeHtml(name);
 
-    function getRecordLink(log) {
-        if (log.record_id && log.record_id.toString().trim() !== '') {
-            return 'record_view.php?id=' + log.record_id;
-        }
-        return '#';
-    }
+                // Add role badge if admin
+                if (log.role_name && log.role_name.toLowerCase().includes('admin')) {
+                    displayName += ' <span class="role-badge admin">(Admin)</span>';
+                }
 
-    // Folder Filtering functions - FIXED VERSION
-    function showAllLogs() {
-        currentFilter = 'all';
-        currentFilterId = null;
-
-        updateActiveFolder('allLogsFolder');
-        document.getElementById('currentFolderTitle').textContent = 'System Activities Timeline';
-        document.getElementById('currentFolderSubtitle').textContent = 'Track all record creation, changes, and disposal actions';
-        document.getElementById('folderContentTitle').textContent = 'Activities Timeline';
-        
-        // Use the allLogs array directly
-        document.getElementById('folderContentSubtitle').textContent = allLogs.length + ' activity entries found';
-        
-        displayLogs(allLogs);
-    }
-
-    function showMonthLogs(monthKey, monthYear) {
-        currentFilter = 'month';
-        currentFilterId = monthKey;
-
-        updateActiveFolder(null);
-        const monthFolder = document.querySelector(`.folder-item[data-month="${monthKey}"]`);
-        if (monthFolder) {
-            monthFolder.classList.add('active');
-        }
-
-        document.getElementById('currentFolderTitle').textContent = monthYear + ' Activities';
-        document.getElementById('currentFolderSubtitle').textContent = 'Activities from ' + monthYear;
-        document.getElementById('folderContentTitle').textContent = monthYear + ' Activities';
-
-        // Get logs for this month - check if month exists in logsByMonth
-        const monthData = logsByMonth[monthKey];
-        const monthLogs = monthData && monthData.logs ? monthData.logs : [];
-        document.getElementById('folderContentSubtitle').textContent = monthLogs.length + ' activity entries found';
-        displayLogs(monthLogs);
-    }
-
-    function showTypeLogs(typeKey) {
-        currentFilter = 'type';
-        currentFilterId = typeKey;
-
-        updateActiveFolder(null);
-        const typeFolder = document.querySelector(`.folder-item[data-type="${typeKey}"]`);
-        if (typeFolder) {
-            typeFolder.classList.add('active');
-        }
-
-        // Get type name
-        const typeData = logsByType[typeKey];
-        const typeName = typeData && typeData.type ? typeData.type : typeKey;
-
-        document.getElementById('currentFolderTitle').textContent = typeName;
-        document.getElementById('currentFolderSubtitle').textContent = 'Activities of type: ' + typeName;
-        document.getElementById('folderContentTitle').textContent = typeName;
-
-        // Get logs for this type
-        const typeLogs = typeData && typeData.logs ? typeData.logs : [];
-        document.getElementById('folderContentSubtitle').textContent = typeLogs.length + ' activity entries found';
-        displayLogs(typeLogs);
-    }
-
-    function showUserLogs(username) {
-        currentFilter = 'user';
-        currentFilterId = username;
-
-        updateActiveFolder(null);
-        const userFolder = document.querySelector(`.folder-item[data-user="${username}"]`);
-        if (userFolder) {
-            userFolder.classList.add('active');
-        }
-
-        document.getElementById('currentFolderTitle').textContent = username + "'s Activities";
-        document.getElementById('currentFolderSubtitle').textContent = 'Activities by user: ' + username;
-        document.getElementById('folderContentTitle').textContent = username + "'s Activities";
-
-        // Get logs for this user
-        const userData = logsByUser[username];
-        const userLogs = userData && userData.logs ? userData.logs : [];
-        document.getElementById('folderContentSubtitle').textContent = userLogs.length + ' activity entries found';
-        displayLogs(userLogs);
-    }
-
-    function updateActiveFolder(activeId) {
-        document.querySelectorAll('.folder-item').forEach(item => {
-            item.classList.remove('active');
-        });
-
-        if (activeId) {
-            const activeElement = document.getElementById(activeId);
-            if (activeElement) {
-                activeElement.classList.add('active');
+                return displayName;
+            } else {
+                return 'System';
             }
         }
-    }
 
-    // Display logs function - FIXED
-    function displayLogs(logs) {
-        const tbody = document.getElementById('logsTableBody');
+        function getUserOfficeDisplay(log) {
+            if (log.user_office_name && log.user_office_name.trim() !== '') {
+                // Check if user is admin
+                if (log.role_name && log.role_name.toLowerCase().includes('admin')) {
+                    return 'Admin';
+                }
+                return escapeHtml(log.user_office_name);
+            }
 
-        if (!logs || logs.length === 0) {
-            tbody.innerHTML = `
+            return 'N/A';
+        }
+
+        function getActionDescription(log) {
+            const actionType = log.action_type || '';
+            const recordTitle = log.record_series_title || '';
+            const agencyName = log.agency_name || '';
+            const fieldName = log.field_name || '';
+
+            if (log.log_type === 'creation') {
+                return 'Record Created: ' + escapeHtml(recordTitle);
+            } else if (log.log_type === 'disposal_action') {
+                let desc = escapeHtml(actionType);
+                if (recordTitle) {
+                    desc += ' - ' + escapeHtml(recordTitle);
+                } else if (agencyName) {
+                    desc += ' - ' + escapeHtml(agencyName);
+                }
+                return desc;
+            } else if (log.log_type === 'record_change') {
+                let desc = 'Field Changed: ' + escapeHtml(fieldName);
+                if (recordTitle) {
+                    desc += ' in ' + escapeHtml(recordTitle);
+                }
+                return desc;
+            } else if (log.log_type === 'request_creation') {
+                return 'Disposal Request Created: ' + escapeHtml(agencyName);
+            }
+
+            return 'System Activity';
+        }
+
+        function getRecordLink(log) {
+            if (log.record_id && log.record_id.toString().trim() !== '') {
+                return 'record_view.php?id=' + log.record_id;
+            }
+            return '#';
+        }
+
+        // Folder Filtering functions - FIXED VERSION
+        function showAllLogs() {
+            currentFilter = 'all';
+            currentFilterId = null;
+
+            updateActiveFolder('allLogsFolder');
+            document.getElementById('currentFolderTitle').textContent = 'System Activities Timeline';
+            document.getElementById('currentFolderSubtitle').textContent = 'Track all record creation, changes, and disposal actions';
+            document.getElementById('folderContentTitle').textContent = 'Activities Timeline';
+
+            // Use the allLogs array directly
+            document.getElementById('folderContentSubtitle').textContent = allLogs.length + ' activity entries found';
+
+            displayLogs(allLogs);
+        }
+
+        function showMonthLogs(monthKey, monthYear) {
+            currentFilter = 'month';
+            currentFilterId = monthKey;
+
+            updateActiveFolder(null);
+            const monthFolder = document.querySelector(`.folder-item[data-month="${monthKey}"]`);
+            if (monthFolder) {
+                monthFolder.classList.add('active');
+            }
+
+            document.getElementById('currentFolderTitle').textContent = monthYear + ' Activities';
+            document.getElementById('currentFolderSubtitle').textContent = 'Activities from ' + monthYear;
+            document.getElementById('folderContentTitle').textContent = monthYear + ' Activities';
+
+            // Get logs for this month - check if month exists in logsByMonth
+            const monthData = logsByMonth[monthKey];
+            const monthLogs = monthData && monthData.logs ? monthData.logs : [];
+            document.getElementById('folderContentSubtitle').textContent = monthLogs.length + ' activity entries found';
+            displayLogs(monthLogs);
+        }
+
+        function showTypeLogs(typeKey) {
+            currentFilter = 'type';
+            currentFilterId = typeKey;
+
+            updateActiveFolder(null);
+            const typeFolder = document.querySelector(`.folder-item[data-type="${typeKey}"]`);
+            if (typeFolder) {
+                typeFolder.classList.add('active');
+            }
+
+            // Get type name
+            const typeData = logsByType[typeKey];
+            const typeName = typeData && typeData.type ? typeData.type : typeKey;
+
+            document.getElementById('currentFolderTitle').textContent = typeName;
+            document.getElementById('currentFolderSubtitle').textContent = 'Activities of type: ' + typeName;
+            document.getElementById('folderContentTitle').textContent = typeName;
+
+            // Get logs for this type
+            const typeLogs = typeData && typeData.logs ? typeData.logs : [];
+            document.getElementById('folderContentSubtitle').textContent = typeLogs.length + ' activity entries found';
+            displayLogs(typeLogs);
+        }
+
+        function showUserLogs(username) {
+            currentFilter = 'user';
+            currentFilterId = username;
+
+            updateActiveFolder(null);
+            const userFolder = document.querySelector(`.folder-item[data-user="${username}"]`);
+            if (userFolder) {
+                userFolder.classList.add('active');
+            }
+
+            document.getElementById('currentFolderTitle').textContent = username + "'s Activities";
+            document.getElementById('currentFolderSubtitle').textContent = 'Activities by user: ' + username;
+            document.getElementById('folderContentTitle').textContent = username + "'s Activities";
+
+            // Get logs for this user
+            const userData = logsByUser[username];
+            const userLogs = userData && userData.logs ? userData.logs : [];
+            document.getElementById('folderContentSubtitle').textContent = userLogs.length + ' activity entries found';
+            displayLogs(userLogs);
+        }
+
+        function updateActiveFolder(activeId) {
+            document.querySelectorAll('.folder-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            if (activeId) {
+                const activeElement = document.getElementById(activeId);
+                if (activeElement) {
+                    activeElement.classList.add('active');
+                }
+            }
+        }
+
+        // Display logs function - FIXED
+        function displayLogs(logs) {
+            const tbody = document.getElementById('logsTableBody');
+
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = `
                 <tr>
                     <td colspan="5">
                         <div class="empty-state">
@@ -2268,23 +2278,23 @@ function getFieldDisplayValue($log) {
                     </td>
                 </tr>
             `;
-            return;
-        }
+                return;
+            }
 
-        let html = '';
-        
-        // Use the logs array directly - they already have display_id from PHP
-        logs.forEach((log) => {
-            const displayId = String(log.display_id).padStart(5, '0');
-            const actionClass = getActionClass(log.action_type);
-            const userName = getUserDisplayName(log);
-            const userOffice = getUserOfficeDisplay(log);
-            const actionDesc = getActionDescription(log);
-            const recordLink = getRecordLink(log);
-            const displayDate = formatDateTimeDisplay(log.action_date);
-            const shortDate = new Date(log.action_date).toLocaleDateString('en-US');
-            
-            html += `
+            let html = '';
+
+            // Use the logs array directly - they already have display_id from PHP
+            logs.forEach((log) => {
+                const displayId = String(log.display_id).padStart(5, '0');
+                const actionClass = getActionClass(log.action_type);
+                const userName = getUserDisplayName(log);
+                const userOffice = getUserOfficeDisplay(log);
+                const actionDesc = getActionDescription(log);
+                const recordLink = getRecordLink(log);
+                const displayDate = formatDateTimeDisplay(log.action_date);
+                const shortDate = new Date(log.action_date).toLocaleDateString('en-US');
+
+                html += `
                 <tr id="log-row-${log.display_id}">
                     <td>
                         <div class="record-badge">
@@ -2524,121 +2534,125 @@ function getFieldDisplayValue($log) {
                     </td>
                 </tr>
             `;
-        });
+            });
 
-        tbody.innerHTML = html;
-    }
-
-    // Toggle log details view
-    function toggleLogDetails(logId) {
-        const detailsRow = document.getElementById(`log-details-${logId}`);
-        if (!detailsRow) return;
-        
-        const isVisible = detailsRow.style.display === 'table-row';
-        
-        // Close all other detail rows
-        document.querySelectorAll('.log-details-row').forEach(row => {
-            row.style.display = 'none';
-        });
-        
-        // Toggle current row
-        detailsRow.style.display = isVisible ? 'none' : 'table-row';
-        
-        // Smooth scroll to details if opening
-        if (!isVisible) {
-            setTimeout(() => {
-                detailsRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }, 100);
-        }
-    }
-
-    // Reset all filters
-    function resetFilters() {
-        document.getElementById('filterForm').reset();
-        window.location.href = 'reports.php';
-    }
-
-    // Initialize on page load
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize Select2 for action type filter
-        $('#action_type').select2({
-            placeholder: "All Actions",
-            allowClear: true,
-            width: '100%',
-            minimumResultsForSearch: 10,
-            dropdownParent: $('#filterForm')
-        });
-
-        // Set date range limits
-        const today = new Date().toISOString().split('T')[0];
-        const dateToInput = document.getElementById('date_to');
-        const dateFromInput = document.getElementById('date_from');
-        
-        if (dateToInput) dateToInput.max = today;
-        if (dateFromInput) dateFromInput.max = today;
-
-        // Set default date values if empty
-        if (!dateFromInput.value) {
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 30);
-            dateFromInput.value = sevenDaysAgo.toISOString().split('T')[0];
-        }
-        
-        if (!dateToInput.value) {
-            dateToInput.value = today;
+            tbody.innerHTML = html;
         }
 
-        // Handle date validation
-        if (dateFromInput) {
-            dateFromInput.addEventListener('change', function() {
-                if (dateToInput && this.value > dateToInput.value) {
-                    dateToInput.value = this.value;
+        // Toggle log details view
+        function toggleLogDetails(logId) {
+            const detailsRow = document.getElementById(`log-details-${logId}`);
+            if (!detailsRow) return;
+
+            const isVisible = detailsRow.style.display === 'table-row';
+
+            // Close all other detail rows
+            document.querySelectorAll('.log-details-row').forEach(row => {
+                row.style.display = 'none';
+            });
+
+            // Toggle current row
+            detailsRow.style.display = isVisible ? 'none' : 'table-row';
+
+            // Smooth scroll to details if opening
+            if (!isVisible) {
+                setTimeout(() => {
+                    detailsRow.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest'
+                    });
+                }, 100);
+            }
+        }
+
+        // Reset all filters
+        function resetFilters() {
+            document.getElementById('filterForm').reset();
+            window.location.href = 'reports.php';
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize Select2 for action type filter
+            $('#action_type').select2({
+                placeholder: "All Actions",
+                allowClear: true,
+                width: '100%',
+                minimumResultsForSearch: 10,
+                dropdownParent: $('#filterForm')
+            });
+
+            // Set date range limits
+            const today = new Date().toISOString().split('T')[0];
+            const dateToInput = document.getElementById('date_to');
+            const dateFromInput = document.getElementById('date_from');
+
+            if (dateToInput) dateToInput.max = today;
+            if (dateFromInput) dateFromInput.max = today;
+
+            // Set default date values if empty
+            if (!dateFromInput.value) {
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 30);
+                dateFromInput.value = sevenDaysAgo.toISOString().split('T')[0];
+            }
+
+            if (!dateToInput.value) {
+                dateToInput.value = today;
+            }
+
+            // Handle date validation
+            if (dateFromInput) {
+                dateFromInput.addEventListener('change', function() {
+                    if (dateToInput && this.value > dateToInput.value) {
+                        dateToInput.value = this.value;
+                    }
+                });
+            }
+
+            if (dateToInput) {
+                dateToInput.addEventListener('change', function() {
+                    if (dateFromInput && this.value < dateFromInput.value) {
+                        dateFromInput.value = this.value;
+                    }
+                });
+            }
+
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                // Ctrl + F to focus search
+                if (e.ctrlKey && e.key === 'f') {
+                    e.preventDefault();
+                    const searchInput = document.getElementById('search_filter');
+                    if (searchInput) searchInput.focus();
+                }
+
+                // Esc to clear search
+                if (e.key === 'Escape') {
+                    const searchInput = document.getElementById('search_filter');
+                    if (document.activeElement === searchInput && searchInput && searchInput.value) {
+                        searchInput.value = '';
+                        searchInput.focus();
+                    }
+                }
+
+                // Ctrl + R to reset filters
+                if (e.ctrlKey && e.key === 'r') {
+                    e.preventDefault();
+                    resetFilters();
                 }
             });
-        }
 
-        if (dateToInput) {
-            dateToInput.addEventListener('change', function() {
-                if (dateFromInput && this.value < dateFromInput.value) {
-                    dateFromInput.value = this.value;
-                }
-            });
-        }
+            // Debug: Check if data is loaded
+            console.log('All logs loaded:', allLogs.length);
+            console.log('Logs by month:', Object.keys(logsByMonth).length);
+            console.log('Logs by type:', Object.keys(logsByType).length);
+            console.log('Logs by user:', Object.keys(logsByUser).length);
 
-        // Add keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            // Ctrl + F to focus search
-            if (e.ctrlKey && e.key === 'f') {
-                e.preventDefault();
-                const searchInput = document.getElementById('search_filter');
-                if (searchInput) searchInput.focus();
-            }
-
-            // Esc to clear search
-            if (e.key === 'Escape') {
-                const searchInput = document.getElementById('search_filter');
-                if (document.activeElement === searchInput && searchInput && searchInput.value) {
-                    searchInput.value = '';
-                    searchInput.focus();
-                }
-            }
-
-            // Ctrl + R to reset filters
-            if (e.ctrlKey && e.key === 'r') {
-                e.preventDefault();
-                resetFilters();
-            }
+            // Initialize with "All Logs" selected
+            showAllLogs();
         });
-        
-        // Debug: Check if data is loaded
-        console.log('All logs loaded:', allLogs.length);
-        console.log('Logs by month:', Object.keys(logsByMonth).length);
-        console.log('Logs by type:', Object.keys(logsByType).length);
-        console.log('Logs by user:', Object.keys(logsByUser).length);
-        
-        // Initialize with "All Logs" selected
-        showAllLogs();
-    });
-</script>
+    </script>
 </body>
+
 </html>
