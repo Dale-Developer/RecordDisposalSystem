@@ -176,6 +176,11 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       grid-template-columns: 280px 1fr;
       gap: 25px;
       height: calc(100vh - 120px);
+      transition: grid-template-columns 0.3s ease;
+    }
+    
+    .archive-container.sidebar-collapsed {
+      grid-template-columns: 60px 1fr;
     }
     
     /* Folder Sidebar */
@@ -185,23 +190,78 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
       padding: 20px;
       overflow-y: auto;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+    
+    .archive-container.sidebar-collapsed .folders-sidebar {
+      padding: 20px 10px;
+      overflow: visible;
     }
     
     .folders-header {
       margin-bottom: 25px;
       padding-bottom: 15px;
       border-bottom: 2px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+    }
+    
+    .archive-container.sidebar-collapsed .folders-header {
+      flex-direction: column;
+      gap: 10px;
+      border-bottom: none;
+      margin-bottom: 15px;
     }
     
     .folders-header h3 {
       margin: 0;
       color: #1f366c;
       font-size: 18px;
+      transition: opacity 0.3s ease;
+    }
+    
+    .archive-container.sidebar-collapsed .folders-header h3 {
+      display: none;
+    }
+    
+    .sidebar-toggle-btn {
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #1f366c;
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+    }
+    
+    .sidebar-toggle-btn:hover {
+      background: #1f366c;
+      color: white;
+      border-color: #1f366c;
+    }
+    
+    .archive-container.sidebar-collapsed .sidebar-toggle-btn {
+      transform: rotate(180deg);
+      width: 40px;
+      height: 40px;
     }
     
     /* Folder Groups */
     .folder-group {
       margin-bottom: 25px;
+      transition: all 0.3s ease;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-group {
+      margin-bottom: 20px;
     }
     
     .folder-group-title {
@@ -214,10 +274,21 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       display: flex;
       align-items: center;
       gap: 8px;
+      transition: opacity 0.3s ease;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-group-title {
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-group-title span {
+      display: none;
     }
     
     .folder-group-title i {
       color: #1f366c;
+      flex-shrink: 0;
     }
     
     .folders-list {
@@ -236,12 +307,23 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       transition: all 0.3s ease;
       border: 1px solid #e0e0e0;
       background: white;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-item {
+      padding: 12px;
+      justify-content: center;
     }
     
     .folder-item:hover {
       background-color: #f5f5f5;
       border-color: #1f366c;
       transform: translateX(5px);
+    }
+    
+    .archive-container.sidebar-collapsed .folder-item:hover {
+      transform: translateX(0);
     }
     
     .folder-item.active {
@@ -256,6 +338,11 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       margin-right: 12px;
       min-width: 24px;
       text-align: center;
+      flex-shrink: 0;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-icon {
+      margin-right: 0;
     }
     
     .department-folder .folder-icon {
@@ -276,12 +363,24 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
     
     .folder-info {
       flex: 1;
+      transition: opacity 0.3s ease, max-width 0.3s ease;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-info {
+      opacity: 0;
+      max-width: 0;
+      position: absolute;
     }
     
     .folder-name {
       font-weight: 600;
       font-size: 14px;
       margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     
     .folder-count {
@@ -291,6 +390,66 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
     
     .folder-item.active .folder-count {
       color: rgba(255,255,255,0.9);
+    }
+    
+    /* Tooltip for collapsed state */
+    .folder-item .folder-tooltip {
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: #1f366c;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .folder-item .folder-tooltip::before {
+      content: '';
+      position: absolute;
+      left: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-width: 5px 5px 5px 0;
+      border-style: solid;
+      border-color: transparent #1f366c transparent transparent;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-item:hover .folder-tooltip {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    /* Collapsed sidebar icons */
+    .folder-item .collapsed-icon {
+      display: none;
+      font-size: 18px;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-item .collapsed-icon {
+      display: block;
+    }
+    
+    .archive-container.sidebar-collapsed .folder-item .folder-icon:not(.collapsed-icon) {
+      display: none;
+    }
+    
+    /* All Records Folder in collapsed state */
+    .archive-container.sidebar-collapsed #allRecordsFolder {
+      padding: 12px;
+    }
+    
+    .archive-container.sidebar-collapsed #allRecordsFolder .collapsed-icon {
+      font-size: 20px;
     }
     
     /* Records Main Area */
@@ -653,7 +812,9 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
       <div class="folders-sidebar">
         <div class="folders-header">
           <h3>Archive Folders</h3>
-          <p style="font-size: 13px; color: #666; margin: 5px 0 0 0;">Browse archived records by category</p>
+          <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Collapse/Expand Sidebar">
+            <i class="fas fa-chevron-left"></i>
+          </button>
         </div>
         
         <!-- All Records Folder -->
@@ -665,9 +826,14 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
           <div class="folders-list">
             <div class="folder-item active" onclick="showAllRecords()" id="allRecordsFolder">
               <i class="fas fa-boxes folder-icon"></i>
+              <i class="fas fa-boxes collapsed-icon"></i>
               <div class="folder-info">
                 <div class="folder-name">All Archived Records</div>
                 <div class="folder-count"><?= count($records) ?> records</div>
+              </div>
+              <div class="folder-tooltip">
+                All Archived Records<br>
+                <small><?= count($records) ?> records</small>
               </div>
             </div>
           </div>
@@ -688,9 +854,14 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
                    onclick="showDepartmentRecords(<?= $dept_id ?>, '<?= htmlspecialchars($dept_data['department_name']) ?>')"
                    data-department-id="<?= $dept_id ?>">
                 <i class="fas fa-folder folder-icon"></i>
+                <i class="fas fa-building collapsed-icon"></i>
                 <div class="folder-info">
                   <div class="folder-name"><?= htmlspecialchars($dept_data['department_name']) ?></div>
                   <div class="folder-count"><?= $record_count ?> records</div>
+                </div>
+                <div class="folder-tooltip">
+                  <?= htmlspecialchars($dept_data['department_name']) ?><br>
+                  <small><?= $record_count ?> records</small>
                 </div>
               </div>
             <?php endif; endforeach; ?>
@@ -716,9 +887,14 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
                    onclick="showYearRecords(<?= $year_data['year'] ?>)"
                    data-year="<?= $year_data['year'] ?>">
                 <i class="fas fa-folder folder-icon"></i>
+                <i class="fas fa-calendar-alt collapsed-icon"></i>
                 <div class="folder-info">
                   <div class="folder-name"><?= $year_data['year'] ?></div>
                   <div class="folder-count"><?= $record_count ?> records</div>
+                </div>
+                <div class="folder-tooltip">
+                  <?= $year_data['year'] ?> Archives<br>
+                  <small><?= $record_count ?> records</small>
                 </div>
               </div>
             <?php endif; endforeach; ?>
@@ -747,9 +923,14 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
                    onclick="showMonthRecords('<?= $month_key ?>', '<?= htmlspecialchars($month_data['month_year']) ?>')"
                    data-month="<?= $month_key ?>">
                 <i class="fas fa-folder folder-icon"></i>
+                <i class="fas fa-calendar collapsed-icon"></i>
                 <div class="folder-info">
                   <div class="folder-name"><?= $month_data['month_year'] ?></div>
                   <div class="folder-count"><?= $record_count ?> records</div>
+                </div>
+                <div class="folder-tooltip">
+                  <?= $month_data['month_year'] ?><br>
+                  <small><?= $record_count ?> records</small>
                 </div>
               </div>
             <?php endif; endforeach; ?>
@@ -1029,6 +1210,32 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
     let recordsByDepartment = <?= json_encode($records_by_department) ?>;
     let recordsByYear = <?= json_encode($records_by_year) ?>;
     let recordsByMonth = <?= json_encode($records_by_month) ?>;
+    let isSidebarCollapsed = false;
+
+    // --- Toggle Sidebar ---
+    function toggleSidebar() {
+      const container = document.querySelector('.archive-container');
+      isSidebarCollapsed = !isSidebarCollapsed;
+      
+      if (isSidebarCollapsed) {
+        container.classList.add('sidebar-collapsed');
+        localStorage.setItem('archiveSidebarCollapsed', 'true');
+      } else {
+        container.classList.remove('sidebar-collapsed');
+        localStorage.setItem('archiveSidebarCollapsed', 'false');
+      }
+    }
+
+    // --- Restore Sidebar State ---
+    function restoreSidebarState() {
+      const savedState = localStorage.getItem('archiveSidebarCollapsed');
+      const container = document.querySelector('.archive-container');
+      
+      if (savedState === 'true') {
+        container.classList.add('sidebar-collapsed');
+        isSidebarCollapsed = true;
+      }
+    }
 
     // --- View Switching ---
     function switchView(view) {
@@ -1428,6 +1635,7 @@ if (isset($_SESSION['records_updated']) && $_SESSION['records_updated'] > 0) {
     // Initialize
     document.addEventListener('DOMContentLoaded', function() {
       console.log('Archived Records Folder View Loaded');
+      restoreSidebarState();
     });
   </script>
 </body>

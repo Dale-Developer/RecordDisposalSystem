@@ -743,34 +743,94 @@ function getFieldDisplayValue($log)
             grid-template-columns: 280px 1fr;
             gap: 25px;
             height: calc(100vh - 120px);
+            transition: grid-template-columns 0.3s ease;
         }
-
+        
+        .archive-container.sidebar-collapsed {
+            grid-template-columns: 60px 1fr;
+        }
+        
         /* Folder Sidebar */
         .folders-sidebar {
             background: white;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             padding: 20px;
             overflow-y: auto;
+            position: relative;
+            transition: all 0.3s ease;
         }
-
+        
+        .archive-container.sidebar-collapsed .folders-sidebar {
+            padding: 20px 10px;
+            overflow: visible;
+        }
+        
         .folders-header {
             margin-bottom: 25px;
             padding-bottom: 15px;
             border-bottom: 2px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
         }
-
+        
+        .archive-container.sidebar-collapsed .folders-header {
+            flex-direction: column;
+            gap: 10px;
+            border-bottom: none;
+            margin-bottom: 15px;
+        }
+        
         .folders-header h3 {
             margin: 0;
             color: #1f366c;
             font-size: 18px;
+            transition: opacity 0.3s ease;
         }
-
+        
+        .archive-container.sidebar-collapsed .folders-header h3 {
+            display: none;
+        }
+        
+        .sidebar-toggle-btn {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #1f366c;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        
+        .sidebar-toggle-btn:hover {
+            background: #1f366c;
+            color: white;
+            border-color: #1f366c;
+        }
+        
+        .archive-container.sidebar-collapsed .sidebar-toggle-btn {
+            transform: rotate(180deg);
+            width: 40px;
+            height: 40px;
+        }
+        
         /* Folder Groups */
         .folder-group {
             margin-bottom: 25px;
+            transition: all 0.3s ease;
         }
-
+        
+        .archive-container.sidebar-collapsed .folder-group {
+            margin-bottom: 20px;
+        }
+        
         .folder-group-title {
             font-size: 14px;
             font-weight: 600;
@@ -781,18 +841,29 @@ function getFieldDisplayValue($log)
             display: flex;
             align-items: center;
             gap: 8px;
+            transition: opacity 0.3s ease;
         }
-
+        
+        .archive-container.sidebar-collapsed .folder-group-title {
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        
+        .archive-container.sidebar-collapsed .folder-group-title span {
+            display: none;
+        }
+        
         .folder-group-title i {
             color: #1f366c;
+            flex-shrink: 0;
         }
-
+        
         .folders-list {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
-
+        
         /* Folder Items */
         .folder-item {
             display: flex;
@@ -803,57 +874,158 @@ function getFieldDisplayValue($log)
             transition: all 0.3s ease;
             border: 1px solid #e0e0e0;
             background: white;
+            position: relative;
+            overflow: hidden;
         }
-
+        
+        .archive-container.sidebar-collapsed .folder-item {
+            padding: 12px;
+            justify-content: center;
+        }
+        
         .folder-item:hover {
             background-color: #f5f5f5;
             border-color: #1f366c;
             transform: translateX(5px);
         }
-
+        
+        .archive-container.sidebar-collapsed .folder-item:hover {
+            transform: translateX(0);
+        }
+        
         .folder-item.active {
             background-color: #1f366c;
             color: white;
             border-color: #1f366c;
             box-shadow: 0 4px 8px rgba(31, 54, 108, 0.2);
         }
-
+        
         .folder-icon {
             font-size: 18px;
             margin-right: 12px;
             min-width: 24px;
             text-align: center;
+            flex-shrink: 0;
         }
-
+        
+        .archive-container.sidebar-collapsed .folder-icon {
+            margin-right: 0;
+        }
+        
         .folder-item.active .folder-icon {
             color: white;
         }
-
+        
         .folder-info {
             flex: 1;
+            transition: opacity 0.3s ease, max-width 0.3s ease;
+            overflow: hidden;
+            max-width: 100%;
         }
-
+        
+        .archive-container.sidebar-collapsed .folder-info {
+            opacity: 0;
+            max-width: 0;
+            position: absolute;
+        }
+        
         .folder-name {
             font-weight: 600;
             font-size: 14px;
             margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-
+        
         .folder-count {
             font-size: 12px;
             opacity: 0.7;
         }
-
+        
         .folder-item.active .folder-count {
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255,255,255,0.9);
         }
-
+        
+        /* Tooltip for collapsed state */
+        .folder-item .folder-tooltip {
+            position: absolute;
+            left: calc(100% + 10px);
+            top: 50%;
+            transform: translateY(-50%);
+            background: #1f366c;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .folder-item .folder-tooltip::before {
+            content: '';
+            position: absolute;
+            left: -5px;
+            top: 50%;
+            transform: translateY(-50%);
+            border-width: 5px 5px 5px 0;
+            border-style: solid;
+            border-color: transparent #1f366c transparent transparent;
+        }
+        
+        .archive-container.sidebar-collapsed .folder-item:hover .folder-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Collapsed sidebar icons */
+        .folder-item .collapsed-icon {
+            display: none;
+            font-size: 18px;
+        }
+        
+        .archive-container.sidebar-collapsed .folder-item .collapsed-icon {
+            display: block;
+        }
+        
+        .archive-container.sidebar-collapsed .folder-item .folder-icon:not(.collapsed-icon) {
+            display: none;
+        }
+        
+        /* All Logs Folder in collapsed state */
+        .archive-container.sidebar-collapsed #allLogsFolder {
+            padding: 12px;
+        }
+        
+        .archive-container.sidebar-collapsed #allLogsFolder .collapsed-icon {
+            font-size: 20px;
+        }
+        
+        /* Month, Type, User folders in collapsed state */
+        .archive-container.sidebar-collapsed .month-folder .collapsed-icon {
+            color: #1976d2;
+        }
+        
+        .archive-container.sidebar-collapsed .type-folder .collapsed-icon {
+            color: #28a745;
+        }
+        
+        .archive-container.sidebar-collapsed .user-folder .collapsed-icon {
+            color: #ff9800;
+        }
+        
         /* Records Main Area */
         .records-main {
             display: flex;
             flex-direction: column;
         }
-
+        
         .header-actions {
             display: flex;
             justify-content: space-between;
@@ -862,62 +1034,62 @@ function getFieldDisplayValue($log)
             background: white;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-
+        
         .current-folder-info h2 {
             margin: 0 0 5px 0;
             color: #1f366c;
             font-size: 24px;
         }
-
+        
         .current-folder-info p {
             margin: 0;
             color: #666;
             font-size: 14px;
         }
-
+        
         /* Folder Content Display */
         .folder-content {
             flex: 1;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
-
+        
         .folder-content-header {
             padding: 20px;
             border-bottom: 1px solid #e0e0e0;
             background: #f8f9fa;
         }
-
+        
         .folder-content-header h3 {
             margin: 0 0 5px 0;
             color: #1f366c;
         }
-
+        
         .folder-content-header p {
             margin: 0;
             color: #666;
             font-size: 14px;
         }
-
+        
         .folder-records-container {
             flex: 1;
             overflow-y: auto;
             padding: 20px;
         }
-
+        
         /* Simplified table styling */
         .records-table-view {
             width: 100%;
             border-collapse: separate;
             border-spacing: 0 8px;
         }
-
+        
         .records-table-view th {
             background: #f8f9fa;
             color: #1f366c;
@@ -928,31 +1100,31 @@ function getFieldDisplayValue($log)
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-
+        
         .records-table-view tbody tr {
             background: white;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             transition: all 0.3s ease;
         }
-
+        
         .records-table-view tbody tr:hover {
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
             transform: translateY(-1px);
         }
-
+        
         .records-table-view td {
             padding: 15px;
             border: none;
             vertical-align: top;
             text-align: center;
         }
-
+        
         /* Record badge */
         .record-badge {
             margin-bottom: 5px;
         }
-
+        
         .record-id {
             display: inline-block;
             padding: 4px 8px;
@@ -962,73 +1134,73 @@ function getFieldDisplayValue($log)
             font-weight: 600;
             font-size: 12px;
         }
-
+        
         .record-code {
             font-size: 12px;
             color: #666;
             margin-top: 3px;
         }
-
+        
         /* Record title */
         .record-title {
             margin-bottom: 8px;
             line-height: 1.4;
         }
-
+        
         .record-meta {
             display: flex;
             flex-direction: column;
             gap: 4px;
         }
-
+        
         .meta-item {
             font-size: 11px;
             color: #666;
         }
-
+        
         .meta-item i {
             width: 14px;
             margin-right: 4px;
             color: #1f366c;
         }
-
+        
         /* Creator info */
         .creator-info {
             line-height: 1.4;
         }
-
+        
         .creator-name {
             font-weight: 500;
             margin-bottom: 3px;
         }
-
+        
         .creator-office {
             font-size: 12px;
             color: #666;
         }
-
+        
         /* Status column improvements */
         .main-status {
             margin-bottom: 8px;
         }
-
+        
         .sub-status {
             margin-bottom: 5px;
         }
-
+        
         .status-indicator {
             font-weight: 500;
             padding: 2px 6px;
             border-radius: 3px;
             font-size: 11px;
         }
-
+        
         .disposal-badge {
             margin-top: 8px;
             padding-top: 8px;
             border-top: 1px dashed #ddd;
         }
-
+        
         /* Action buttons */
         .view-details-btn,
         .close-details-btn {
@@ -1043,16 +1215,16 @@ function getFieldDisplayValue($log)
             align-items: center;
             gap: 5px;
         }
-
+        
         .view-details-btn {
             background: #1f366c;
             color: white;
         }
-
+        
         .view-details-btn:hover {
             background: #152852;
         }
-
+        
         /* Details panel improvements */
         .log-details-content {
             padding: 20px;
@@ -1060,29 +1232,29 @@ function getFieldDisplayValue($log)
             border-radius: 8px;
             border-left: 4px solid #1f366c;
         }
-
+        
         .details-header {
             margin-bottom: 20px;
             padding-bottom: 15px;
             border-bottom: 1px solid #dee2e6;
         }
-
+        
         .details-header h4 {
             margin: 0;
             color: #1f366c;
         }
-
+        
         .details-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 30px;
             margin-bottom: 20px;
         }
-
+        
         .details-section {
             margin-bottom: 20px;
         }
-
+        
         .details-section h5 {
             margin: 0 0 10px 0;
             color: #495057;
@@ -1091,13 +1263,13 @@ function getFieldDisplayValue($log)
             align-items: center;
             gap: 8px;
         }
-
+        
         .details-item {
             margin-bottom: 8px;
             display: flex;
             align-items: flex-start;
         }
-
+        
         .details-item label {
             font-weight: 600;
             color: #666;
@@ -1105,132 +1277,132 @@ function getFieldDisplayValue($log)
             font-size: 12px;
             text-transform: uppercase;
         }
-
+        
         .details-item span {
             flex: 1;
             font-size: 14px;
             color: #333;
             word-break: break-word;
         }
-
+        
         .details-footer {
             text-align: right;
             padding-top: 15px;
             border-top: 1px solid #dee2e6;
         }
-
+        
         .close-details-btn {
             background: #6c757d;
             color: white;
         }
-
+        
         .close-details-btn:hover {
             background: #5a6268;
         }
-
+        
         /* Status badge colors */
         .status-success {
             background-color: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
         }
-
+        
         .status-pending {
             background-color: #fff3cd;
             color: #856404;
             border: 1px solid #ffeaa7;
         }
-
+        
         .status-failed {
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
-
+        
         .status-archive {
             background-color: #d6dbdf;
             color: #424949;
             border: 1px solid #c1c7cd;
         }
-
+        
         .status-disposed {
             background-color: #e8daef;
             color: #512e5f;
             border: 1px solid #dcc6e8;
         }
-
+        
         .status-info {
             background-color: #d1ecf1;
             color: #0c5460;
             border: 1px solid #bee5eb;
         }
-
+        
         .status-warning {
             background-color: #fff3cd;
             color: #856404;
             border: 1px solid #ffeaa7;
         }
-
+        
         /* Status indicator (smaller version) */
         .status-indicator.status-success {
             background-color: rgba(212, 237, 218, 0.3);
             color: #155724;
         }
-
+        
         .status-indicator.status-pending {
             background-color: rgba(255, 243, 205, 0.3);
             color: #856404;
         }
-
+        
         /* Empty State */
         .empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #78909c;
         }
-
+        
         .empty-state-icon {
             font-size: 64px;
             color: #cfd8dc;
             margin-bottom: 20px;
         }
-
+        
         .empty-state h3 {
             margin: 0 0 10px 0;
             color: #546e7a;
             font-size: 18px;
         }
-
+        
         .empty-state p {
             margin: 0;
             font-size: 14px;
             max-width: 400px;
             margin: 0 auto;
         }
-
+        
         /* Scrollbar styling */
         .folders-sidebar::-webkit-scrollbar,
         .folder-records-container::-webkit-scrollbar {
             width: 6px;
         }
-
+        
         .folders-sidebar::-webkit-scrollbar-track,
         .folder-records-container::-webkit-scrollbar-track {
             background: #f1f1f1;
             border-radius: 10px;
         }
-
+        
         .folders-sidebar::-webkit-scrollbar-thumb,
         .folder-records-container::-webkit-scrollbar-thumb {
             background: #c1c1c1;
             border-radius: 10px;
         }
-
+        
         .folders-sidebar::-webkit-scrollbar-thumb:hover,
         .folder-records-container::-webkit-scrollbar-thumb:hover {
             background: #a1a1a1;
         }
-
+        
         /* Role badge */
         .role-badge {
             font-size: 10px;
@@ -1238,12 +1410,12 @@ function getFieldDisplayValue($log)
             border-radius: 3px;
             font-weight: 600;
         }
-
+        
         .role-badge.admin {
             background-color: #1f366c;
             color: white;
         }
-
+        
         /* Search/filter bar */
         .search-filter-bar {
             background: #f8f9fa;
@@ -1252,44 +1424,44 @@ function getFieldDisplayValue($log)
             margin-bottom: 20px;
             border: 1px solid #e0e0e0;
         }
-
+        
         .filter-form {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
             align-items: end;
         }
-
+        
         @media (min-width: 1200px) {
             .filter-form {
                 grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
             }
         }
-
+        
         @media (max-width: 1199px) and (min-width: 768px) {
             .filter-form {
                 grid-template-columns: repeat(3, 1fr);
             }
-
+            
             .filter-buttons {
                 grid-column: span 3;
                 justify-content: flex-end;
             }
         }
-
+        
         @media (max-width: 767px) {
             .filter-form {
                 grid-template-columns: 1fr;
                 gap: 10px;
             }
         }
-
+        
         .filter-group {
             display: flex;
             flex-direction: column;
             min-width: 0;
         }
-
+        
         .filter-group label {
             font-size: 12px;
             font-weight: 600;
@@ -1300,7 +1472,7 @@ function getFieldDisplayValue($log)
             overflow: hidden;
             text-overflow: ellipsis;
         }
-
+        
         .filter-input {
             padding: 8px 12px;
             border: 1px solid #ddd;
@@ -1310,12 +1482,12 @@ function getFieldDisplayValue($log)
             box-sizing: border-box;
             height: 38px;
         }
-
+        
         .filter-input::placeholder {
             color: #999;
             font-size: 13px;
         }
-
+        
         .filter-button {
             padding: 8px 20px;
             background: #1f366c;
@@ -1332,26 +1504,26 @@ function getFieldDisplayValue($log)
             gap: 5px;
             white-space: nowrap;
         }
-
+        
         .filter-button:hover {
             background: #152852;
         }
-
+        
         .filter-button.reset {
             background: #6c757d;
         }
-
+        
         .filter-button.reset:hover {
             background: #5a6268;
         }
-
+        
         .filter-buttons {
             display: flex;
             gap: 10px;
             align-items: flex-end;
             height: 38px;
         }
-
+        
         /* Date input styling */
         input[type="date"].filter-input {
             appearance: none;
@@ -1360,7 +1532,7 @@ function getFieldDisplayValue($log)
             background-size: 16px;
             padding-right: 35px;
         }
-
+        
         /* Select2 customization */
         .select2-container--default .select2-selection--single {
             border: 1px solid #ddd;
@@ -1368,34 +1540,34 @@ function getFieldDisplayValue($log)
             height: 38px;
             padding: 4px;
         }
-
+        
         .select2-container--default .select2-selection--single .select2-selection__rendered {
             line-height: 28px;
             font-size: 14px;
             color: #333;
         }
-
+        
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 36px;
         }
-
+        
         .select2-container--default .select2-selection--single .select2-selection__arrow b {
             border-color: #666 transparent transparent transparent;
         }
-
+        
         .select2-container--default.select2-container--open .select2-selection--single .select2-selection__arrow b {
             border-color: transparent transparent #666 transparent;
         }
-
+        
         .select2-container--default .select2-results__option--highlighted[aria-selected] {
             background-color: #1f366c;
         }
-
+        
         .select2-container--default .select2-results__option[aria-selected=true] {
             background-color: #f8f9fa;
             color: #1f366c;
         }
-
+        
         /* Ensure all filter inputs have consistent appearance */
         #search_filter:focus,
         #date_from:focus,
@@ -1405,34 +1577,34 @@ function getFieldDisplayValue($log)
             box-shadow: 0 0 0 2px rgba(31, 54, 108, 0.1);
             outline: none;
         }
-
+        
         /* Log details row */
         .log-details-row {
             display: none;
             background: #f9f9f9;
         }
-
+        
         .text-danger {
             color: #dc3545 !important;
         }
-
+        
         .text-success {
             color: #28a745 !important;
         }
-
+        
         .text-warning {
             color: #ffc107 !important;
         }
-
+        
         .text-primary {
             color: #1f366c !important;
         }
-
+        
         .admin-office {
             color: #1f366c;
             font-weight: 600;
         }
-
+        
         /* Value change display */
         .value-change {
             background: #f8f9fa;
@@ -1442,13 +1614,13 @@ function getFieldDisplayValue($log)
             font-size: 12px;
             display: inline-block;
         }
-
+        
         .arrow {
             color: #1f366c;
             margin: 0 5px;
             font-weight: bold;
         }
-
+        
         /* Responsive */
         @media (max-width: 1200px) {
             .details-grid {
@@ -1456,27 +1628,27 @@ function getFieldDisplayValue($log)
                 gap: 20px;
             }
         }
-
+        
         @media (max-width: 768px) {
             .archive-container {
                 grid-template-columns: 1fr;
             }
-
+            
             .folders-sidebar {
                 max-height: 300px;
             }
-
+            
             .records-table-view {
                 display: block;
                 overflow-x: auto;
             }
-
+            
             .records-table-view th,
             .records-table_view td {
                 white-space: nowrap;
             }
         }
-
+        
         @media (max-width: 1400px) {
             .records-table-view {
                 min-width: 1000px;
@@ -1509,6 +1681,9 @@ function getFieldDisplayValue($log)
             <div class="folders-sidebar">
                 <div class="folders-header">
                     <h3>Log Categories</h3>
+                    <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Collapse/Expand Sidebar">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
                 </div>
 
                 <!-- All Logs Folder -->
@@ -1520,9 +1695,14 @@ function getFieldDisplayValue($log)
                     <div class="folders-list">
                         <div class="folder-item active" onclick="showAllLogs()" id="allLogsFolder">
                             <i class="fas fa-boxes folder-icon"></i>
+                            <i class="fas fa-boxes collapsed-icon"></i>
                             <div class="folder-info">
                                 <div class="folder-name">All System Activities</div>
                                 <div class="folder-count"><?= $total_logs ?> entries</div>
+                            </div>
+                            <div class="folder-tooltip">
+                                All System Activities<br>
+                                <small><?= $total_logs ?> entries</small>
                             </div>
                         </div>
                     </div>
@@ -1546,9 +1726,14 @@ function getFieldDisplayValue($log)
                                         onclick="showMonthLogs('<?= $month_key ?>', '<?= htmlspecialchars($month_data['month_year']) ?>')"
                                         data-month="<?= $month_key ?>">
                                         <i class="fas fa-folder folder-icon" style="color: #1976d2;"></i>
+                                        <i class="fas fa-calendar-alt collapsed-icon"></i>
                                         <div class="folder-info">
                                             <div class="folder-name"><?= $month_data['month_year'] ?></div>
                                             <div class="folder-count"><?= $log_count ?> entries</div>
+                                        </div>
+                                        <div class="folder-tooltip">
+                                            <?= $month_data['month_year'] ?><br>
+                                            <small><?= $log_count ?> entries</small>
                                         </div>
                                     </div>
                             <?php endif;
@@ -1572,9 +1757,14 @@ function getFieldDisplayValue($log)
                                     <div class="folder-item type-folder" onclick="showTypeLogs('<?= $type_key ?>')"
                                         data-type="<?= $type_key ?>">
                                         <i class="fas fa-folder folder-icon" style="color: #28a745;"></i>
+                                        <i class="fas fa-tags collapsed-icon"></i>
                                         <div class="folder-info">
                                             <div class="folder-name"><?= htmlspecialchars($type_data['type']) ?></div>
                                             <div class="folder-count"><?= $log_count ?> entries</div>
+                                        </div>
+                                        <div class="folder-tooltip">
+                                            <?= htmlspecialchars($type_data['type']) ?><br>
+                                            <small><?= $log_count ?> entries</small>
                                         </div>
                                     </div>
                             <?php endif;
@@ -1597,9 +1787,14 @@ function getFieldDisplayValue($log)
                                     <div class="folder-item user-folder" onclick="showUserLogs('<?= htmlspecialchars($user_name) ?>')"
                                         data-user="<?= htmlspecialchars($user_name) ?>">
                                         <i class="fas fa-folder folder-icon" style="color: #ff9800;"></i>
+                                        <i class="fas fa-users collapsed-icon"></i>
                                         <div class="folder-info">
                                             <div class="folder-name"><?= htmlspecialchars($user_name) ?></div>
                                             <div class="folder-count"><?= $log_count ?> entries</div>
+                                        </div>
+                                        <div class="folder-tooltip">
+                                            <?= htmlspecialchars($user_name) ?><br>
+                                            <small><?= $log_count ?> entries</small>
                                         </div>
                                     </div>
                             <?php endif;
@@ -2020,6 +2215,32 @@ function getFieldDisplayValue($log)
         let logsByMonth = <?= json_encode($logs_by_month) ?>;
         let logsByType = <?= json_encode($logs_by_type) ?>;
         let logsByUser = <?= json_encode($logs_by_user) ?>;
+        let isSidebarCollapsed = false;
+
+        // --- Toggle Sidebar ---
+        function toggleSidebar() {
+            const container = document.querySelector('.archive-container');
+            isSidebarCollapsed = !isSidebarCollapsed;
+            
+            if (isSidebarCollapsed) {
+                container.classList.add('sidebar-collapsed');
+                localStorage.setItem('reportsSidebarCollapsed', 'true');
+            } else {
+                container.classList.remove('sidebar-collapsed');
+                localStorage.setItem('reportsSidebarCollapsed', 'false');
+            }
+        }
+
+        // --- Restore Sidebar State ---
+        function restoreSidebarState() {
+            const savedState = localStorage.getItem('reportsSidebarCollapsed');
+            const container = document.querySelector('.archive-container');
+            
+            if (savedState === 'true') {
+                container.classList.add('sidebar-collapsed');
+                isSidebarCollapsed = true;
+            }
+        }
 
         // Helper functions
         function escapeHtml(text) {
@@ -2642,6 +2863,9 @@ function getFieldDisplayValue($log)
                     resetFilters();
                 }
             });
+
+            // Restore sidebar state
+            restoreSidebarState();
 
             // Debug: Check if data is loaded
             console.log('All logs loaded:', allLogs.length);
